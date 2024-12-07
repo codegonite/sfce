@@ -34,7 +34,7 @@ $(TARGET): $(OBJECT_FILES) | build
 clean:
 	rm -r build/*
 
-run:
+run: $(TARGET)
 	$(TARGET)
 
 build:
