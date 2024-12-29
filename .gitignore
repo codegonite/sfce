@@ -1,4 +1,4 @@
-ignore/*
-build/*
-bin/*
-.vscode/*
+.vscode/**
+ignore/**
+build/**
+bin/**
