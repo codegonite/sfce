@@ -120,14 +120,21 @@ struct sfce_node_position {
     int32_t                 offset_within_piece;
 };
 
+struct sfce_node_span {
+    struct sfce_node_position start;
+    struct sfce_node_position end;
+    int32_t                   length;
+    int32_t                   line_count;
+};
+
 struct sfce_piece_tree {
     struct sfce_piece_node    *root;
     struct sfce_string_buffer *buffers;
-    int32_t                    change_buffer_index;
     int32_t                    buffer_count;
     int32_t                    buffer_capacity;
     int32_t                    line_count;
     int32_t                    length;
+    int32_t                    change_buffer_index;
     enum sfce_newline_type     newline_type;
 };
 
@@ -143,6 +150,8 @@ int32_t buffer_newline_sequence_size(const char *buffer, int32_t buffer_size);
 int32_t buffer_newline_count(const char *buffer, int32_t buffer_size);
 int win32_set_console_cursor_visibilty(HANDLE console_handle, int visible);
 COORD win32_get_rect_size(SMALL_RECT rect);
+enum sfce_error_code sfce_enable_virtual_terminal();
+struct sfce_window_size sfce_get_console_screen_size();
 
 void sfce_string_destroy(struct sfce_string *string);
 enum sfce_error_code sfce_string_reserve(struct sfce_string *result, int32_t capacity);
@@ -157,13 +166,11 @@ enum sfce_error_code sfce_string_append_formated_string(struct sfce_string *stri
 enum sfce_error_code sfce_string_flush(struct sfce_string *string);
 int16_t sfce_string_compare(struct sfce_string string0, struct sfce_string string1);
 
-struct sfce_line_starts sfce_line_starts_alloc(size_t count);
 void sfce_line_starts_destroy(struct sfce_line_starts *lines);
 enum sfce_error_code sfce_line_starts_reserve(struct sfce_line_starts *lines, int32_t capacity);
 enum sfce_error_code sfce_line_starts_resize(struct sfce_line_starts *lines, int32_t size);
 enum sfce_error_code sfce_line_starts_push_line_offset(struct sfce_line_starts *lines, int32_t offset);
 
-struct sfce_string_buffer sfce_string_buffer_create();
 void sfce_string_buffer_destroy(struct sfce_string_buffer *buffer);
 enum sfce_error_code sfce_string_buffer_append_content(struct sfce_string_buffer *buffer, const char *data, int32_t size);
 struct sfce_string_buffer_position sfce_string_buffer_get_end_position(struct sfce_string_buffer *buffer);
@@ -186,32 +193,33 @@ struct sfce_piece_node *sfce_piece_node_leftmost(struct sfce_piece_node *node);
 struct sfce_piece_node *sfce_piece_node_rightmost(struct sfce_piece_node *node);
 struct sfce_piece_node *sfce_piece_node_next(struct sfce_piece_node *node);
 struct sfce_piece_node *sfce_piece_node_prev(struct sfce_piece_node *node);
-struct sfce_piece_node *sfce_piece_node_rotate_left(struct sfce_piece_tree *tree, struct sfce_piece_node *node);
-struct sfce_piece_node *sfce_piece_node_rotate_right(struct sfce_piece_tree *tree, struct sfce_piece_node *node);
-struct sfce_piece_node *sfce_piece_node_insert_left(struct sfce_piece_tree *tree, struct sfce_piece_node *where, struct sfce_piece_node *node_to_insert);
-struct sfce_piece_node *sfce_piece_node_insert_right(struct sfce_piece_tree *tree, struct sfce_piece_node *where, struct sfce_piece_node *node_to_insert);
-void sfce_piece_node_remove_node(struct sfce_piece_tree *tree, struct sfce_piece_node *where);
-void sfce_piece_node_transplant(struct sfce_piece_tree *tree, struct sfce_piece_node *where, struct sfce_piece_node *node_to_transplant);
-void sfce_piece_node_update_metadata(struct sfce_piece_tree *tree, struct sfce_piece_node *node, int32_t delta_length, int32_t delta_line_count);
-void sfce_piece_node_recompute_metadata(struct sfce_piece_tree *tree, struct sfce_piece_node *node);
-void sfce_piece_node_fix_insert_violation(struct sfce_piece_tree *tree, struct sfce_piece_node *node);
-void sfce_piece_node_fix_remove_violation(struct sfce_piece_tree *tree, struct sfce_piece_node *node);
+struct sfce_piece_node *sfce_piece_node_rotate_left(struct sfce_piece_node **root, struct sfce_piece_node *node);
+struct sfce_piece_node *sfce_piece_node_rotate_right(struct sfce_piece_node **root, struct sfce_piece_node *node);
+struct sfce_piece_node *sfce_piece_node_insert_left(struct sfce_piece_node **root, struct sfce_piece_node *where, struct sfce_piece_node *node_to_insert);
+struct sfce_piece_node *sfce_piece_node_insert_right(struct sfce_piece_node **root, struct sfce_piece_node *where, struct sfce_piece_node *node_to_insert);
+void sfce_piece_node_remove_node(struct sfce_piece_node **root, struct sfce_piece_node *where);
+void sfce_piece_node_transplant(struct sfce_piece_node **root, struct sfce_piece_node *where, struct sfce_piece_node *node_to_transplant);
+void sfce_piece_node_update_metadata(struct sfce_piece_node **root, struct sfce_piece_node *node, int32_t delta_length, int32_t delta_line_count);
+void sfce_piece_node_recompute_metadata(struct sfce_piece_node **root, struct sfce_piece_node *node);
+void sfce_piece_node_fix_insert_violation(struct sfce_piece_node **root, struct sfce_piece_node *node);
+void sfce_piece_node_fix_remove_violation(struct sfce_piece_node **root, struct sfce_piece_node *node);
 void sfce_piece_node_print(struct sfce_piece_tree *tree, struct sfce_piece_node *root, uint32_t space);
 void sfce_piece_node_inorder_print(struct sfce_piece_tree *tree, struct sfce_piece_node *root);
 void sfce_piece_node_reset_sentinel();
 
 struct sfce_piece_tree sfce_piece_tree_create(enum sfce_newline_type newline_type);
 void sfce_piece_tree_destroy(struct sfce_piece_tree *tree);
-int32_t sfce_piece_tree_get_change_buffer_index(struct sfce_piece_tree *tree, int32_t required_size);
 struct sfce_node_position sfce_piece_tree_node_at_offset(struct sfce_piece_tree *tree, int32_t offset);
-struct sfce_node_position sfce_piece_tree_node_at_row_and_col(struct sfce_piece_tree *tree, int32_t row, int32_t col);
 struct sfce_string_buffer_position sfce_piece_tree_node_position_to_buffer_position(struct sfce_piece_tree *tree, struct sfce_node_position position);
+enum sfce_error_code sfce_piece_tree_ensure_change_buffer_size(struct sfce_piece_tree *tree, int32_t required_size);
 enum sfce_error_code sfce_piece_tree_append_node_content_to_string(struct sfce_piece_tree *tree, struct sfce_piece_node *node, struct sfce_string *string);
 enum sfce_error_code sfce_piece_tree_set_buffer_count(struct sfce_piece_tree *tree, int32_t buffer_count);
-enum sfce_error_code sfce_piece_tree_add_buffer(struct sfce_piece_tree *tree, struct sfce_string_buffer buffer);
-struct sfce_piece sfce_piece_tree_create_piece(struct sfce_piece_tree *tree, const char *data, int32_t byte_count);
+enum sfce_error_code sfce_piece_tree_add_new_string_buffer(struct sfce_piece_tree *tree);
+enum sfce_error_code sfce_piece_tree_create_piece(struct sfce_piece_tree *tree, const char *data, int32_t byte_count, struct sfce_piece *result_piece);
 enum sfce_error_code sfce_piece_tree_insert(struct sfce_piece_tree *tree, int32_t offset, const char *data, int32_t byte_count);
 enum sfce_error_code sfce_piece_tree_erase(struct sfce_piece_tree *tree, int32_t offset, int32_t byte_count);
+enum sfce_error_code sfce_piece_tree_insert_with_position(struct sfce_piece_tree *tree, struct sfce_node_position position, const char *data, int32_t byte_count);
+enum sfce_error_code sfce_piece_tree_erase_with_position(struct sfce_piece_tree *tree, struct sfce_node_position start, struct sfce_node_position end);
 enum sfce_error_code sfce_piece_tree_load_file(struct sfce_piece_tree *tree, const char *filepath);
 enum sfce_error_code sfce_piece_tree_get_line_content(struct sfce_piece_tree *tree, int32_t line_number, struct sfce_string *string);
 enum sfce_error_code sfce_piece_tree_create_snapshot(struct sfce_piece_tree *tree, struct sfce_piece_tree_snapshot *snapshot);
@@ -270,6 +278,121 @@ void PrintVerticalBorder()
     printf(ESC "(B"); // exit line drawing mode
 }
 
+int main(void)
+{
+    struct sfce_piece_tree tree = sfce_piece_tree_create(SFCE_NEWLINE_TYPE_LF);
+    struct sfce_piece_tree_snapshot snapshot = {0};
+    
+    sfce_piece_tree_load_file(&tree, "source/sfce.c");
+    // sfce_piece_tree_load_file(&tree, "ignore/index.js");
+    // sfce_piece_node_print(&tree, tree.root, 0);
+
+    struct sfce_string line_contents = {};
+    enum sfce_error_code error_code = sfce_piece_tree_get_line_content(&tree, 0, &line_contents);
+
+    assert(error_code == SFCE_ERROR_OK && "sfce_piece_tree_get_line_content failed!");
+
+    fprintf(stderr, "line_contents: '%.*s'\n", (int)line_contents.size, line_contents.data);
+    
+    assert(sfce_piece_tree_create_snapshot(&tree, &snapshot) == SFCE_ERROR_OK);
+
+    fprintf(stderr, "tree.line_count: %d\n", tree.line_count);
+    fprintf(stderr, "tree.length: %d\n", tree.length);
+
+    fprintf(stderr, "snapshot.pieces: %p\n", snapshot.pieces);
+    fprintf(stderr, "snapshot.piece_count: %d\n", snapshot.piece_count);
+
+    return 0;
+}
+
+int main2(void)
+{
+    enum sfce_error_code error_code = sfce_enable_virtual_terminal();
+    if (error_code != SFCE_ERROR_OK) {
+        return -1;
+    }
+
+    fprintf(stdout, "\x1b[?25l\x1b[?1049h");
+
+    while (!_kbhit()) {
+        Sleep(100);
+    }
+
+    struct sfce_window_size window_size = sfce_get_console_screen_size();
+
+    fprintf(stdout, "\x1b[?25h\x1b[?1049l");
+    fprintf(stderr, "window_size = { %d, %d }\n", window_size.width, window_size.height);
+
+    return 0;
+}
+
+int32_t round_multiple_of_two(int32_t value, int32_t multiple)
+{
+    return (value + multiple - 1) & -multiple;
+}
+
+int32_t newline_sequence_size(const char *string)
+{
+    if (string[0] == '\r') return (string[1] == '\n') ? 2 : 1;
+    if (string[0] == '\n') return 1;
+    return 0;
+}
+
+int32_t buffer_newline_sequence_size(const char *buffer, int32_t buffer_size)
+{
+    if (buffer_size > 0) {
+        if (buffer[0] == '\r') return (buffer_size > 1 && buffer[1] == '\n') ? 2 : 1;
+        if (buffer[0] == '\n') return 1;
+    }
+
+    return 0;
+}
+
+int32_t buffer_newline_count(const char *buffer, int32_t buffer_size)
+{
+    int32_t newline_count = 0;
+
+    const char *buffer_end = buffer + buffer_size;
+    while (buffer < buffer_end) {
+        int32_t newline_size = buffer_newline_sequence_size(buffer, buffer_end - buffer);
+
+        if (newline_size > 0) {
+            buffer += newline_size;
+            ++newline_count;
+            continue;
+        }
+
+        buffer += 1;
+    }
+
+    return newline_count;
+}
+
+int win32_set_console_cursor_visibilty(HANDLE console_handle, int visible)
+{
+    CONSOLE_CURSOR_INFO cursor_info = {};
+    
+    if (!GetConsoleCursorInfo(console_handle, &cursor_info)) {
+        return FALSE;
+    }
+
+    cursor_info.bVisible = visible;
+    
+    if (!SetConsoleCursorInfo(console_handle, &cursor_info)) {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+COORD win32_get_rect_size(SMALL_RECT rect)
+{
+    return (COORD) {
+        .X = rect.Right - rect.Left + 1,
+        .Y = rect.Bottom - rect.Top + 1,
+    };
+}
+
 enum sfce_error_code sfce_enable_virtual_terminal()
 {
     HANDLE console_handle = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -313,252 +436,6 @@ struct sfce_window_size sfce_get_console_screen_size()
     fprintf(stdout, "\x1b[u");
 
     return window_size;
-}
-
-int main(void)
-{
-    enum sfce_error_code error_code = sfce_enable_virtual_terminal();
-    if (error_code != SFCE_ERROR_OK) {
-        return -1;
-    }
-
-    fprintf(stdout, "\x1b[?25l\x1b[?1049h");
-
-    while (!_kbhit()) {
-        Sleep(100);
-    }
-
-    struct sfce_window_size window_size = sfce_get_console_screen_size();
-
-    fprintf(stdout, "\x1b[?25h\x1b[?1049l");
-    fprintf(stderr, "window_size = { %d, %d }\n", window_size.width, window_size.height);
-
-    return 0;
-}
-
-int main6(void)
-{
-    enum sfce_error_code error_code = sfce_enable_virtual_terminal();
-    if (error_code != SFCE_ERROR_OK) {
-        return -1;
-    }
-
-    savecursor();
-    movecursor(10, 5);
-
-    // Print a message at the new cursor position
-    // printf("Cursor moved to (5,10)\n");
-    // PrintVerticalBorder();
-
-    _getch();
-
-    restorecursor();
-    return 0;
-}
-
-int main5(void)
-{
-    HANDLE console_handle = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
-    assert(console_handle != INVALID_HANDLE_VALUE);
-
-    DWORD console_mode = 0;
-    assert(GetConsoleMode(console_handle, &console_mode));
-    console_mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    assert(SetConsoleMode(console_handle, console_mode));
-
-    assert(SetConsoleActiveScreenBuffer(console_handle));
-
-    CONSOLE_SCREEN_BUFFER_INFO buffer_info = {};
-    assert(GetConsoleScreenBufferInfo(console_handle, &buffer_info));
-
-    // int16_t screen_width = buffer_info.srWindow.Right - buffer_info.srWindow.Left + 1;
-    // int16_t screen_height = buffer_info.srWindow.Bottom - buffer_info.srWindow.Top + 1;
-    COORD screen_size = { 120, 40 };
-    CHAR_INFO *buffer = calloc(screen_size.X * screen_size.Y, sizeof *buffer);
-    assert(buffer);
-
-    for (int32_t idx = 0; idx < screen_size.X * screen_size.Y; ++idx) {
-        buffer[idx].Char.UnicodeChar = L'A';
-        buffer[idx].Attributes = FOREGROUND_BLUE | BACKGROUND_RED;
-    }
-
-    SMALL_RECT write_region = {
-        0, 0,
-        screen_size.X,
-        screen_size.Y,
-    };
-
-    assert(WriteConsoleOutput(console_handle, buffer, screen_size, (COORD) { 0, 0 }, &write_region));
-
-    _getch();
-
-    return 0;
-}
-
-int main4(void)
-{
-    // enum sfce_error_code error_code;
-    // HANDLE console_handle = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
-    // // HANDLE console_handle = GetStdHandle(STD_OUTPUT_HANDLE);
-
-    // if (console_handle == INVALID_HANDLE_VALUE) {
-    //     return -1;
-    // }
-    
-    // struct sfce_console_buffer console = sfce_console_buffer_create(console_handle);
-    // if (console.buffer == NULL) {
-    //     return -1;
-    // }
-
-    // while (!_kbhit()) {
-    //     error_code = sfce_console_buffer_update(&console);
-    //     if (error_code != SFCE_ERROR_OK) {
-    //         fprintf(stderr, "from 'sfce_console_buffer_update' ERROR: %d\n", error_code);
-    //         return -1;
-    //     }
-        
-    //     for (int32_t idx = 0; idx < console.capacity; ++idx) {
-    //         console.buffer[idx] = (CHAR_INFO) {
-    //             .Char.UnicodeChar = 'A' + (idx) % ('z' - 'A' + 1),
-    //             .Attributes = FOREGROUND_BLUE
-    //         };
-    //     }
-        
-    //     error_code = sfce_console_buffer_flush(&console);
-    //     if (error_code != SFCE_ERROR_OK) {
-    //         fprintf(stderr, "from 'sfce_console_buffer_flush' ERROR: %d\n", error_code);
-    //         return -1;
-    //     }
-    // }
-
-    // return 0;
-}
-
-int main3(void)
-{
-    HANDLE console_handle = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
-    COORD buffer_size = {};
-     
-    if (console_handle == INVALID_HANDLE_VALUE) {
-        return -1;
-    }
-
-    assert(SetConsoleActiveScreenBuffer(console_handle));
-
-    CONSOLE_SCREEN_BUFFER_INFOEX info = { .cbSize = sizeof(info) };
-    assert(GetConsoleScreenBufferInfoEx(console_handle, &info));
-
-    CONSOLE_CURSOR_INFO cursor_info = {};
-    assert(GetConsoleCursorInfo(console_handle, &cursor_info));
-    cursor_info.bVisible = FALSE;
-    assert(SetConsoleCursorInfo(console_handle, &cursor_info));
-
-    buffer_size = info.dwSize;
-    fprintf(stderr, "buffer_size = { %d, %d }\n", (int)buffer_size.X, (int)buffer_size.Y);
-    
-    CHAR_INFO *buffer = calloc(buffer_size.X * buffer_size.Y, sizeof *buffer);
-    if (buffer == NULL) {
-        return -1;
-    }
-
-    buffer[0].Char.UnicodeChar = 'A';
-    buffer[0].Attributes = FOREGROUND_BLUE;
-
-    while (!kbhit()) {
-        COORD buffer_coord = { 0, 0 };
-        SMALL_RECT write_region = {};
-
-        assert(WriteConsoleOutput(console_handle, buffer, buffer_size, buffer_coord, &write_region));
-    }
-
-    assert(SetConsoleActiveScreenBuffer(GetStdHandle(STD_OUTPUT_HANDLE)));
-
-    return 0;
-}
-
-int main2(int argc, const char *argv[])
-{
-    (void)(argc);
-    (void)(argv);
-
-    struct sfce_piece_tree tree = sfce_piece_tree_create(SFCE_NEWLINE_TYPE_LF);
-    struct sfce_piece_tree_snapshot snapshot = {0};
-    
-    // sfce_piece_tree_load_file(&tree, "source/sfce.c");
-    sfce_piece_tree_load_file(&tree, "ignore/index.js");
-    sfce_piece_node_print(&tree, tree.root, 0);
-    
-    assert(sfce_piece_tree_create_snapshot(&tree, &snapshot) == SFCE_ERROR_OK);
-
-    fprintf(stderr, "snapshot.pieces: %p\n", snapshot.pieces);
-    fprintf(stderr, "snapshot.piece_count: %d\n", snapshot.piece_count);
-
-    return 0;
-}
-
-int32_t round_multiple_of_two(int32_t value, int32_t multiple)
-{
-    return (value + multiple - 1) & -multiple;
-}
-
-int32_t newline_sequence_size(const char *string)
-{
-    if (string[0] == '\r') return (string[1] == '\n') ? 2 : 1;
-    if (string[0] == '\n') return 1;
-    return 0;
-}
-
-int32_t buffer_newline_sequence_size(const char *buffer, int32_t buffer_size)
-{
-    if (buffer_size != 0) {
-        if (buffer[0] == '\r') return (buffer_size >= 2 && buffer[1] == '\n') ? 2 : 1;
-        if (buffer[0] == '\n') return 1;
-    }
-
-    return 0;
-}
-
-int32_t buffer_newline_count(const char *buffer, int32_t buffer_size)
-{
-    int32_t newline_count = 0;
-    for (int32_t idx = 0; idx < buffer_size;) {
-        int32_t newline_size = buffer_newline_sequence_size(buffer, buffer_size - idx);
-
-        if (newline_size != 0) {
-            idx += newline_size;
-            ++newline_count;
-            continue;
-        }
-
-        ++idx;
-    }
-
-    return newline_count;
-}
-
-int win32_set_console_cursor_visibilty(HANDLE console_handle, int visible)
-{
-    CONSOLE_CURSOR_INFO cursor_info = {};
-    
-    if (!GetConsoleCursorInfo(console_handle, &cursor_info)) {
-        return FALSE;
-    }
-
-    cursor_info.bVisible = visible;
-    
-    if (!SetConsoleCursorInfo(console_handle, &cursor_info)) {
-        return FALSE;
-    }
-
-    return TRUE;
-}
-
-COORD win32_get_rect_size(SMALL_RECT rect)
-{
-    return (COORD) {
-        .X = rect.Right - rect.Left + 1,
-        .Y = rect.Bottom - rect.Top + 1,
-    };
 }
 
 void sfce_string_destroy(struct sfce_string *string)
@@ -754,21 +631,6 @@ int16_t sfce_string_compare(struct sfce_string string0, struct sfce_string strin
     return 0;
 }
 
-struct sfce_line_starts sfce_line_starts_alloc(size_t count)
-{
-    struct sfce_line_starts lines = {
-        .offsets = malloc(count * sizeof *lines.offsets),
-        .capacity = count,
-        .count = 0,
-    };
-
-    if (lines.offsets == NULL) {
-        return (struct sfce_line_starts) {};
-    }
-
-    return lines;
-}
-
 void sfce_line_starts_destroy(struct sfce_line_starts *lines)
 {
     if (lines->offsets != NULL) {
@@ -819,21 +681,6 @@ enum sfce_error_code sfce_line_starts_push_line_offset(struct sfce_line_starts *
 
     lines->offsets[index] = offset;
     return SFCE_ERROR_OK;
-}
-
-struct sfce_string_buffer sfce_string_buffer_create()
-{
-    struct sfce_line_starts line_starts = {};
-    enum sfce_error_code error_code = sfce_line_starts_push_line_offset(&line_starts, 0);
-
-    if (error_code != SFCE_ERROR_OK) {
-        return (struct sfce_string_buffer) {};
-    }
-
-    return (struct sfce_string_buffer) {
-        .content = (struct sfce_string) {},
-        .line_starts = line_starts,
-    };
 }
 
 void sfce_string_buffer_destroy(struct sfce_string_buffer *buffer)
@@ -1153,7 +1000,7 @@ struct sfce_piece_node *sfce_piece_node_prev(struct sfce_piece_node *node)
     return node->parent;
 }
 
-struct sfce_piece_node *sfce_piece_node_rotate_left(struct sfce_piece_tree *tree, struct sfce_piece_node *x)
+struct sfce_piece_node *sfce_piece_node_rotate_left(struct sfce_piece_node **root, struct sfce_piece_node *x)
 {
 	struct sfce_piece_node *y = x->right;
 
@@ -1168,7 +1015,7 @@ struct sfce_piece_node *sfce_piece_node_rotate_left(struct sfce_piece_tree *tree
 
 	y->parent = x->parent;
     if (x->parent == sentinel_ptr) {
-		tree->root = y;
+		*root = y;
 	}
     else if (x->parent->left == x) {
 		x->parent->left = y;
@@ -1182,7 +1029,7 @@ struct sfce_piece_node *sfce_piece_node_rotate_left(struct sfce_piece_tree *tree
     return y;
 }
 
-struct sfce_piece_node *sfce_piece_node_rotate_right(struct sfce_piece_tree *tree, struct sfce_piece_node *y)
+struct sfce_piece_node *sfce_piece_node_rotate_right(struct sfce_piece_node **root, struct sfce_piece_node *y)
 {
     struct sfce_piece_node *x = y->left;
     y->left = x->right;
@@ -1195,7 +1042,7 @@ struct sfce_piece_node *sfce_piece_node_rotate_right(struct sfce_piece_tree *tre
     y->left_subtree_line_count -= x->left_subtree_line_count + x->piece.line_count;
 
     if (y->parent == sentinel_ptr) {
-        tree->root = x;
+        *root = x;
     }
     else if (y == y->parent->right) {
         y->parent->right = x;
@@ -1209,10 +1056,10 @@ struct sfce_piece_node *sfce_piece_node_rotate_right(struct sfce_piece_tree *tre
     return x;
 }
 
-struct sfce_piece_node *sfce_piece_node_insert_left(struct sfce_piece_tree *tree, struct sfce_piece_node *where, struct sfce_piece_node *node_to_insert)
+struct sfce_piece_node *sfce_piece_node_insert_left(struct sfce_piece_node **root, struct sfce_piece_node *where, struct sfce_piece_node *node_to_insert)
 {
-    if (tree->root == sentinel_ptr) {
-        tree->root = node_to_insert;
+    if (*root == sentinel_ptr) {
+        *root = node_to_insert;
         node_to_insert->color = SFCE_COLOR_BLACK;
     }
     else if (where->left == sentinel_ptr) {
@@ -1225,14 +1072,14 @@ struct sfce_piece_node *sfce_piece_node_insert_left(struct sfce_piece_tree *tree
         node_to_insert->parent = prev_node;
     }
 
-    sfce_piece_node_fix_insert_violation(tree, node_to_insert);
+    sfce_piece_node_fix_insert_violation(root, node_to_insert);
     return node_to_insert;
 }
 
-struct sfce_piece_node *sfce_piece_node_insert_right(struct sfce_piece_tree *tree, struct sfce_piece_node *where, struct sfce_piece_node *node_to_insert)
+struct sfce_piece_node *sfce_piece_node_insert_right(struct sfce_piece_node **root, struct sfce_piece_node *where, struct sfce_piece_node *node_to_insert)
 {
-    if (tree->root == sentinel_ptr) {
-        tree->root = node_to_insert;
+    if (*root == sentinel_ptr) {
+        *root = node_to_insert;
         node_to_insert->color = SFCE_COLOR_BLACK;
     }
     else if (where->right == sentinel_ptr) {
@@ -1245,11 +1092,11 @@ struct sfce_piece_node *sfce_piece_node_insert_right(struct sfce_piece_tree *tre
         node_to_insert->parent = next_node;
     }
 
-    sfce_piece_node_fix_insert_violation(tree, node_to_insert);
+    sfce_piece_node_fix_insert_violation(root, node_to_insert);
     return node_to_insert;
 }
 
-void sfce_piece_node_remove_node(struct sfce_piece_tree *tree, struct sfce_piece_node *node_to_remove)
+void sfce_piece_node_remove_node(struct sfce_piece_node **root, struct sfce_piece_node *node_to_remove)
 {
     if (node_to_remove == sentinel_ptr) {
         return;
@@ -1261,13 +1108,13 @@ void sfce_piece_node_remove_node(struct sfce_piece_tree *tree, struct sfce_piece
 
     if (node_to_remove->left == sentinel_ptr) {
         x = node_to_remove->right;
-        sfce_piece_node_transplant(tree, node_to_remove, x);
-        sfce_piece_node_recompute_metadata(tree, x);
+        sfce_piece_node_transplant(root, node_to_remove, x);
+        sfce_piece_node_recompute_metadata(root, x);
     }
     else if (node_to_remove->right == sentinel_ptr) {
         x = node_to_remove->left;
-        sfce_piece_node_transplant(tree, node_to_remove, x);
-        sfce_piece_node_recompute_metadata(tree, x);
+        sfce_piece_node_transplant(root, node_to_remove, x);
+        sfce_piece_node_recompute_metadata(root, x);
     }
     else {
         y = sfce_piece_node_leftmost(node_to_remove->right);
@@ -1277,36 +1124,36 @@ void sfce_piece_node_remove_node(struct sfce_piece_tree *tree, struct sfce_piece
 
         if (y->parent == node_to_remove) {
             x->parent = y;
-            sfce_piece_node_recompute_metadata(tree, x);
+            sfce_piece_node_recompute_metadata(root, x);
         }
         else {
-            sfce_piece_node_transplant(tree, y, y->right);
+            sfce_piece_node_transplant(root, y, y->right);
             y->right = node_to_remove->right;
             y->right->parent = y;
 
-            sfce_piece_node_recompute_metadata(tree, y);
+            sfce_piece_node_recompute_metadata(root, y);
         }
 
-        sfce_piece_node_transplant(tree, node_to_remove, y);
+        sfce_piece_node_transplant(root, node_to_remove, y);
         y->left = node_to_remove->left;
         y->left->parent = y;
         y->color = node_to_remove->color;
 
-        sfce_piece_node_recompute_metadata(tree, y);
+        sfce_piece_node_recompute_metadata(root, y);
     }
 
     sfce_piece_node_reset_sentinel();
     if (original_color == SFCE_COLOR_BLACK) {
-        sfce_piece_node_fix_remove_violation(tree, x);
+        sfce_piece_node_fix_remove_violation(root, x);
     }
     
     sfce_piece_node_destroy_nonrecursive(node_to_remove);
 }
 
-void sfce_piece_node_transplant(struct sfce_piece_tree *tree, struct sfce_piece_node *where, struct sfce_piece_node *node_to_transplant)
+void sfce_piece_node_transplant(struct sfce_piece_node **root, struct sfce_piece_node *where, struct sfce_piece_node *node_to_transplant)
 {
-    if (where == tree->root) {
-        tree->root = node_to_transplant;
+    if (where == *root) {
+        *root = node_to_transplant;
     }
     else if (where == where->parent->left) {
         where->parent->left = node_to_transplant;
@@ -1320,7 +1167,7 @@ void sfce_piece_node_transplant(struct sfce_piece_tree *tree, struct sfce_piece_
     }
 }
 
-void sfce_piece_node_update_metadata(struct sfce_piece_tree *tree, struct sfce_piece_node *node, int32_t delta_length, int32_t delta_line_count)
+void sfce_piece_node_update_metadata(struct sfce_piece_node **root, struct sfce_piece_node *node, int32_t delta_length, int32_t delta_line_count)
 {
     if (delta_length == 0 && delta_line_count == 0) {
         return;
@@ -1329,7 +1176,7 @@ void sfce_piece_node_update_metadata(struct sfce_piece_tree *tree, struct sfce_p
     node->left_subtree_length += delta_length;
     node->left_subtree_line_count += delta_line_count;
 
-    while (node != tree->root) {
+    while (node != *root) {
         if (node->parent->left == node) {
             node->parent->left_subtree_length += delta_length;
             node->parent->left_subtree_line_count += delta_line_count;
@@ -1339,9 +1186,9 @@ void sfce_piece_node_update_metadata(struct sfce_piece_tree *tree, struct sfce_p
     }
 }
 
-void sfce_piece_node_recompute_metadata(struct sfce_piece_tree *tree, struct sfce_piece_node *node)
+void sfce_piece_node_recompute_metadata(struct sfce_piece_node **root, struct sfce_piece_node *node)
 {
-    if (node == tree->root || node == sentinel_ptr) {
+    if (node == *root || node == sentinel_ptr) {
         return;
     }
 
@@ -1349,7 +1196,7 @@ void sfce_piece_node_recompute_metadata(struct sfce_piece_tree *tree, struct sfc
         node = node->parent;
     }
 
-    if (node == tree->root || node == sentinel_ptr) {
+    if (node == *root || node == sentinel_ptr) {
         return;
     }
 
@@ -1364,15 +1211,15 @@ void sfce_piece_node_recompute_metadata(struct sfce_piece_tree *tree, struct sfc
 
     int32_t delta_length = left_length - node->left_subtree_length;
     int32_t delta_line_count = left_line_count - node->left_subtree_line_count;
-    sfce_piece_node_update_metadata(tree, node, delta_length, delta_line_count);
+    sfce_piece_node_update_metadata(root, node, delta_length, delta_line_count);
 }
 
-void sfce_piece_node_fix_insert_violation(struct sfce_piece_tree *tree, struct sfce_piece_node *node)
+void sfce_piece_node_fix_insert_violation(struct sfce_piece_node **root, struct sfce_piece_node *node)
 {
-    sfce_piece_node_recompute_metadata(tree, node);
+    sfce_piece_node_recompute_metadata(root, node);
 
     node->color = SFCE_COLOR_RED;
-    while (node != tree->root && node->parent->color == SFCE_COLOR_RED) {
+    while (node != *root && node->parent->color == SFCE_COLOR_RED) {
         if (node->parent->parent->left == node->parent) {
             struct sfce_piece_node *uncle = node->parent->parent->right;
 
@@ -1385,12 +1232,12 @@ void sfce_piece_node_fix_insert_violation(struct sfce_piece_tree *tree, struct s
             else {
                 if (node->parent->right == node) {
                     node = node->parent;
-                    sfce_piece_node_rotate_left(tree, node);
+                    sfce_piece_node_rotate_left(root, node);
                 }
 
                 node->parent->color = SFCE_COLOR_BLACK;
                 node->parent->parent->color = SFCE_COLOR_RED;
-                sfce_piece_node_rotate_right(tree, node->parent->parent);
+                sfce_piece_node_rotate_right(root, node->parent->parent);
             }
         }
         else {
@@ -1405,31 +1252,31 @@ void sfce_piece_node_fix_insert_violation(struct sfce_piece_tree *tree, struct s
             else {
                 if (node->parent->left == node) {
                     node = node->parent;
-                    sfce_piece_node_rotate_right(tree, node);
+                    sfce_piece_node_rotate_right(root, node);
                 }
 
                 node->parent->color = SFCE_COLOR_BLACK;
                 node->parent->parent->color = SFCE_COLOR_RED;
-                sfce_piece_node_rotate_left(tree, node->parent->parent);
+                sfce_piece_node_rotate_left(root, node->parent->parent);
             }
         }
 	}
 
-    tree->root->color = SFCE_COLOR_BLACK;
+    (*root)->color = SFCE_COLOR_BLACK;
     sfce_piece_node_reset_sentinel();
 }
 
-void sfce_piece_node_fix_remove_violation(struct sfce_piece_tree *tree, struct sfce_piece_node *x)
+void sfce_piece_node_fix_remove_violation(struct sfce_piece_node **root, struct sfce_piece_node *x)
 {
     struct sfce_piece_node *s;
     x->color = SFCE_COLOR_BLACK;
-    while (x != tree->root && x->color == SFCE_COLOR_BLACK) {
+    while (x != *root && x->color == SFCE_COLOR_BLACK) {
         if (x == x->parent->left) {
             s = x->parent->right;
             if (s->color == SFCE_COLOR_RED) {
                 s->color = SFCE_COLOR_BLACK;
                 x->parent->color = SFCE_COLOR_RED;
-                sfce_piece_node_rotate_left(tree, x->parent);
+                sfce_piece_node_rotate_left(root, x->parent);
                 s = x->parent->right;
             }
 
@@ -1441,15 +1288,15 @@ void sfce_piece_node_fix_remove_violation(struct sfce_piece_tree *tree, struct s
                 if (s->right->color == SFCE_COLOR_BLACK) {
                     s->left->color = SFCE_COLOR_BLACK;
                     s->color = SFCE_COLOR_RED;
-                    sfce_piece_node_rotate_right(tree, s);
+                    sfce_piece_node_rotate_right(root, s);
                     s = x->parent->right;
                 }
 
                 s->color = x->parent->color;
                 x->parent->color = SFCE_COLOR_BLACK;
                 s->right->color = SFCE_COLOR_BLACK;
-                sfce_piece_node_rotate_left(tree, x->parent);
-                x = tree->root;
+                sfce_piece_node_rotate_left(root, x->parent);
+                x = *root;
             }
         }
         else {
@@ -1457,7 +1304,7 @@ void sfce_piece_node_fix_remove_violation(struct sfce_piece_tree *tree, struct s
             if (s->color == SFCE_COLOR_RED) {
                 s->color = SFCE_COLOR_BLACK;
                 x->parent->color = SFCE_COLOR_RED;
-                sfce_piece_node_rotate_right(tree, x->parent);
+                sfce_piece_node_rotate_right(root, x->parent);
                 s = x->parent->left;
             }
 
@@ -1469,15 +1316,15 @@ void sfce_piece_node_fix_remove_violation(struct sfce_piece_tree *tree, struct s
                 if (s->left->color == SFCE_COLOR_BLACK) {
                     s->right->color = SFCE_COLOR_BLACK;
                     s->color = SFCE_COLOR_RED;
-                    sfce_piece_node_rotate_left(tree, s);
+                    sfce_piece_node_rotate_left(root, s);
                     s = x->parent->left;
                 }
 
                 s->color = x->parent->color;
                 x->parent->color = SFCE_COLOR_BLACK;
                 s->left->color = SFCE_COLOR_BLACK;
-                sfce_piece_node_rotate_right(tree, x->parent);
-                x = tree->root;
+                sfce_piece_node_rotate_right(root, x->parent);
+                x = *root;
             }
         }
     }
@@ -1552,8 +1399,7 @@ struct sfce_piece_tree sfce_piece_tree_create(enum sfce_newline_type newline_typ
         .newline_type = newline_type,
     };
     
-    struct sfce_string_buffer change_buffer = sfce_string_buffer_create();
-    enum sfce_error_code error_code = sfce_piece_tree_add_buffer(&tree, change_buffer);
+    enum sfce_error_code error_code = sfce_piece_tree_add_new_string_buffer(&tree);
 
     if (error_code != SFCE_ERROR_OK) {
         return (struct sfce_piece_tree) {};
@@ -1577,20 +1423,6 @@ void sfce_piece_tree_destroy(struct sfce_piece_tree *tree)
     }
 
     *tree = (struct sfce_piece_tree) {};
-}
-
-int32_t sfce_piece_tree_get_change_buffer_index(struct sfce_piece_tree *tree, int32_t required_size)
-{
-    struct sfce_string_buffer *string_buffer = &tree->buffers[tree->change_buffer_index];
-    int32_t remaining_size = SFCE_STRING_BUFFER_SIZE_THRESHOLD - string_buffer->content.size;
-
-    if (remaining_size < required_size) {
-        struct sfce_string_buffer new_string_buffer = sfce_string_buffer_create();
-        tree->change_buffer_index = tree->buffer_count;
-        sfce_piece_tree_add_buffer(tree, new_string_buffer);
-    }
-
-    return tree->change_buffer_index;
 }
 
 struct sfce_node_position sfce_piece_tree_node_at_offset(struct sfce_piece_tree *tree, int32_t offset)
@@ -1624,59 +1456,28 @@ struct sfce_node_position sfce_piece_tree_node_at_offset(struct sfce_piece_tree 
     return (struct sfce_node_position) { .node = sentinel_ptr };
 }
 
-struct sfce_node_position sfce_piece_tree_node_at_row_and_col(struct sfce_piece_tree *tree, int32_t row, int32_t col)
-{
-    struct sfce_node_position position = { .node = tree->root };
-    
-    for (int32_t subtree_line_count = row; position.node != sentinel_ptr;) {
-        if (subtree_line_count < position.node->left_subtree_line_count) {
-            position.node = position.node->left;
-        }
-        else if (subtree_line_count > position.node->left_subtree_line_count + position.node->piece.line_count) {
-            position.node_start_offset += position.node->left_subtree_length + position.node->piece.length;
-            position.node_start_line_number += position.node->left_subtree_line_count + position.node->piece.line_count;
-            subtree_line_count -= position.node->left_subtree_line_count + position.node->piece.line_count;
-            position.node = position.node->right;
-        }
-        else {
-
-        }
-    }
-
-    return (struct sfce_node_position) { .node = sentinel_ptr };
-}
-
-// struct sfce_node_position sfce_piece_tree_node_at_row_and_col(struct sfce_piece_tree *tree, int32_t row, int32_t col)
-// {
-//     struct sfce_node_position position = { .node = tree->root };
-//     int32_t subtree_line_number = row;
-
-//     while (position.node != sentinel_ptr) {
-//         if (subtree_line_number < position.node->left_subtree_line_count) {
-//             position.node = position.node->left;
-//         }
-//         else if (subtree_line_number > position.node->left_subtree_line_count + position.node->piece.line_count) {
-//             position.node_start_offset += position.node->left_subtree_length + position.node->piece.length;
-//             position.node_start_line_number += position.node->left_subtree_line_count + position.node->piece.line_count;
-//             subtree_line_number -= position.node->left_subtree_line_count + position.node->piece.line_count;
-//             position.node = position.node->right;
-//         }
-//         else {
-//             position.node_start_offset += position.node->left_subtree_length;
-//             position.offset_within_piece = 0;
-            
-//             return position;
-//         }
-//     }
-
-//     return (struct sfce_node_position) { .node = sentinel_ptr };
-// }
-
 struct sfce_string_buffer_position sfce_piece_tree_node_position_to_buffer_position(struct sfce_piece_tree *tree, struct sfce_node_position position)
 {
     struct sfce_string_buffer *string_buffer = &tree->buffers[position.node->piece.buffer_index];
     int32_t piece_start_offset = sfce_string_buffer_offset_from_position(string_buffer, position.node->piece.start_position);
     return sfce_string_buffer_position_from_offset(string_buffer, piece_start_offset + position.offset_within_piece);
+}
+
+enum sfce_error_code sfce_piece_tree_ensure_change_buffer_size(struct sfce_piece_tree *tree, int32_t required_size)
+{
+    struct sfce_string_buffer *string_buffer = &tree->buffers[tree->change_buffer_index];
+    int32_t remaining_size = SFCE_STRING_BUFFER_SIZE_THRESHOLD - string_buffer->content.size;
+
+    if (remaining_size < required_size) {
+        tree->change_buffer_index = tree->buffer_count;
+        enum sfce_error_code error_code = sfce_piece_tree_add_new_string_buffer(tree);
+
+        if (error_code != SFCE_ERROR_OK) {
+            return error_code;
+        }
+    }
+
+    return SFCE_ERROR_OK;
 }
 
 enum sfce_error_code sfce_piece_tree_append_node_content_to_string(struct sfce_piece_tree *tree, struct sfce_piece_node *node, struct sfce_string *string)
@@ -1724,45 +1525,85 @@ enum sfce_error_code sfce_piece_tree_set_buffer_count(struct sfce_piece_tree *tr
     return SFCE_ERROR_OK;
 }
 
-enum sfce_error_code sfce_piece_tree_add_buffer(struct sfce_piece_tree *tree, struct sfce_string_buffer buffer)
+enum sfce_error_code sfce_piece_tree_add_new_string_buffer(struct sfce_piece_tree *tree)
 {
     enum sfce_error_code error_code = sfce_piece_tree_set_buffer_count(tree, tree->buffer_count + 1);
+
     if (error_code != SFCE_ERROR_OK) {
         return error_code;
     }
 
-    tree->buffers[tree->buffer_count - 1] = buffer;
+    struct sfce_string_buffer new_buffer = {};
+    error_code = sfce_line_starts_push_line_offset(&new_buffer.line_starts, 0);
+
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
+    }
+
+    tree->buffers[tree->buffer_count - 1] = new_buffer;
     return SFCE_ERROR_OK;
 }
 
-struct sfce_piece sfce_piece_tree_create_piece(struct sfce_piece_tree *tree, const char *data, int32_t byte_count)
+enum sfce_error_code sfce_piece_tree_create_piece(struct sfce_piece_tree *tree, const char *data, int32_t byte_count, struct sfce_piece *result_piece)
 {
-    struct sfce_piece piece = {};
-    piece.buffer_index = sfce_piece_tree_get_change_buffer_index(tree, byte_count);
-
-    struct sfce_string_buffer *buffer = &tree->buffers[piece.buffer_index];
-    piece.start_position = sfce_string_buffer_get_end_position(buffer);
-
-    enum sfce_error_code error = sfce_string_buffer_append_content(buffer, data, byte_count);
-    if (error != SFCE_ERROR_OK) {
-        return (struct sfce_piece) {};
+    enum sfce_error_code error_code = sfce_piece_tree_ensure_change_buffer_size(tree, byte_count);
+    
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
     }
 
-    piece.end_position = sfce_string_buffer_get_end_position(buffer);
-    piece.line_count = buffer_newline_count(data, byte_count);
-    piece.length = byte_count;
-    return piece;
+    struct sfce_string_buffer *buffer = &tree->buffers[tree->change_buffer_index];
+    struct sfce_string_buffer_position start_position = sfce_string_buffer_get_end_position(buffer);
+
+    error_code = sfce_string_buffer_append_content(buffer, data, byte_count);
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
+    }
+
+    struct sfce_string_buffer_position end_position = sfce_string_buffer_get_end_position(buffer);
+    int32_t line_count = buffer_newline_count(data, byte_count);
+
+    *result_piece = (struct sfce_piece) {
+        .buffer_index = tree->change_buffer_index,
+        .start_position = start_position,
+        .end_position = end_position,
+        .line_count = line_count,
+        .length = byte_count,
+    };
+
+    return SFCE_ERROR_OK;
 }
 
 enum sfce_error_code sfce_piece_tree_insert(struct sfce_piece_tree *tree, int32_t offset, const char *data, int32_t byte_count)
 {
     struct sfce_node_position where = sfce_piece_tree_node_at_offset(tree, offset);
+    return sfce_piece_tree_insert_with_position(tree, where, data, byte_count);
+}
 
+enum sfce_error_code sfce_piece_tree_erase(struct sfce_piece_tree *tree, int32_t offset, int32_t byte_count)
+{
+    if (byte_count == 0) {
+        return SFCE_ERROR_OK;
+    }
+
+    struct sfce_node_position start = sfce_piece_tree_node_at_offset(tree, offset);
+    struct sfce_node_position end = sfce_piece_tree_node_at_offset(tree, offset + byte_count);
+    return sfce_piece_tree_erase_with_position(tree, start, end);
+}
+
+enum sfce_error_code sfce_piece_tree_insert_with_position(struct sfce_piece_tree *tree, struct sfce_node_position where, const char *data, int32_t byte_count)
+{
     if (where.node == sentinel_ptr) {
         return SFCE_ERROR_BAD_INSERTION;
     }
 
-    struct sfce_piece piece_to_insert = sfce_piece_tree_create_piece(tree, data, byte_count);
+    struct sfce_piece piece_to_insert = {};
+    enum sfce_error_code error_code = sfce_piece_tree_create_piece(tree, data, byte_count, &piece_to_insert);
+
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
+    }
+
     struct sfce_piece_node *node_to_insert = sfce_piece_node_create(piece_to_insert);
 
     if (node_to_insert == NULL) {
@@ -1804,16 +1645,14 @@ enum sfce_error_code sfce_piece_tree_insert(struct sfce_piece_tree *tree, int32_
     return SFCE_ERROR_OK;
 }
 
-enum sfce_error_code sfce_piece_tree_erase(struct sfce_piece_tree *tree, int32_t offset, int32_t byte_count)
+enum sfce_error_code sfce_piece_tree_erase_with_position(struct sfce_piece_tree *tree, struct sfce_node_position start, struct sfce_node_position end)
 {
-    if (byte_count == 0) {
-        return SFCE_ERROR_OK;
-    }
-
-    struct sfce_node_position start = sfce_piece_tree_node_at_offset(tree, offset);
-    struct sfce_node_position end = sfce_piece_tree_node_at_offset(tree, offset + byte_count);
-
     if (start.node == end.node) {
+        if (start.offset_within_piece == end.offset_within_piece) {
+            return SFCE_ERROR_OK;
+        }
+
+        int32_t byte_count = end.offset_within_piece - start.offset_within_piece;
         struct sfce_piece_node *node = start.node;
         struct sfce_piece_pair split_pieces = sfce_piece_split(tree, node->piece, start.offset_within_piece, byte_count);
 
@@ -1871,7 +1710,13 @@ enum sfce_error_code sfce_piece_tree_load_file(struct sfce_piece_tree *tree, con
     int32_t chunk_size = 0;
 
     while (chunk_size = fread(buffer, 1, SFCE_STRING_BUFFER_SIZE_THRESHOLD, fp), chunk_size != 0) {
-        struct sfce_piece piece = sfce_piece_tree_create_piece(tree, buffer, chunk_size);
+        struct sfce_piece piece = {};
+        enum sfce_error_code error_code = sfce_piece_tree_create_piece(tree, buffer, chunk_size, &piece);
+
+        if (error_code != SFCE_ERROR_OK) {
+            return error_code;
+        }
+
         struct sfce_piece_node *node = sfce_piece_node_create(piece);
         struct sfce_piece_node *where = sfce_piece_node_rightmost(tree->root);
         sfce_piece_node_insert_right(tree, where, node);
@@ -1907,20 +1752,20 @@ enum sfce_error_code _sfce_piece_tree_get_line_content(struct sfce_piece_tree *t
 
 enum sfce_error_code sfce_piece_tree_get_line_content(struct sfce_piece_tree *tree, int32_t line_number, struct sfce_string *string)
 {
-    assert(0 && "sfce_piece_tree_get_line_content is unimplemented!");
+    // assert(0 && "sfce_piece_tree_get_line_content is unimplemented!");
 
     int32_t nodeStartOffset = 0;
     struct sfce_piece_node *x = tree->root;
 
     sfce_string_resize(string, 0);
     while (x != sentinel_ptr) {
-        if (x->left != sentinel_ptr && x->left_subtree_line_count >= line_number - 1) {
+        if (x->left != sentinel_ptr && x->left_subtree_line_count >= line_number) {
             x = x->left;
         }
-        else if (x->left_subtree_line_count + x->piece.line_count > line_number - 1) {
+        else if (x->left_subtree_line_count + x->piece.line_count > line_number) {
             struct sfce_string_buffer *string_buffer = &tree->buffers[x->piece.buffer_index];
-            int32_t prevAccumulatedValue = sfce_string_buffer_get_accumulated_value(string_buffer, x, line_number - x->left_subtree_line_count - 2);
-            int32_t accumulatedValue = sfce_string_buffer_get_accumulated_value(string_buffer, x, line_number - x->left_subtree_line_count - 1);
+            int32_t prevAccumulatedValue = sfce_string_buffer_get_accumulated_value(string_buffer, x, line_number - x->left_subtree_line_count - 1);
+            int32_t accumulatedValue = sfce_string_buffer_get_accumulated_value(string_buffer, x, line_number - x->left_subtree_line_count);
             int32_t startOffset = sfce_string_buffer_offset_from_position(string_buffer, x->piece.start_position);
 
             nodeStartOffset += x->left_subtree_length;
@@ -1932,9 +1777,9 @@ enum sfce_error_code sfce_piece_tree_get_line_content(struct sfce_piece_tree *tr
 
             return SFCE_ERROR_OK;
         }
-        else if (x->left_subtree_line_count + x->piece.line_count == line_number - 1) {
+        else if (x->left_subtree_line_count + x->piece.line_count == line_number) {
             struct sfce_string_buffer *string_buffer = &tree->buffers[x->piece.buffer_index];
-            int32_t prevAccumulatedValue = sfce_string_buffer_get_accumulated_value(string_buffer, x, line_number - x->left_subtree_line_count - 2);
+            int32_t prevAccumulatedValue = sfce_string_buffer_get_accumulated_value(string_buffer, x, line_number - x->left_subtree_line_count - 1);
             int32_t startOffset = sfce_string_buffer_offset_from_position(string_buffer, x->piece.start_position);
 
             enum sfce_error_code error_code = sfce_string_append_substring(string, string_buffer->content, startOffset + prevAccumulatedValue, startOffset + x->piece.length);
