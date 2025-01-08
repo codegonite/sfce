@@ -3,14 +3,6 @@
 // https://github.com/microsoft/vscode-textbuffer
 // gcc main.c -O3 -Werror -Wfatal-errors -Wall -o bin/sfce
 
-#include <stdint.h>
-#include <stdio.h>
-#include <assert.h>
-
-#include <windows.h>
-#include <wincon.h>
-#include <conio.h>
-
 #if defined(_WIN32) || defined(_WIN64) || defined(__CYGWIN__)
 #   define SFCE_PLATFORM_WINDOWS
 #elif defined(__linux__) || defined(__linux) || defined(linux)
@@ -19,6 +11,19 @@
 #   define SFCE_PLATFORM_APPLE
 #elif defined(__FreeBSD__)
 #   define SFCE_PLATFORM_FREE_BSD
+#endif
+
+#include <stdint.h>
+#include <stdio.h>
+#include <assert.h>
+
+#if defined(SFCE_PLATFORM_WINDOWS)
+#  include <windows.h>
+#  include <wincon.h>
+#  include <conio.h>
+#else
+#  include <unistd.h>
+#  include <sys/uio.h>
 #endif
 
 #define PRINT_LINE_NUMBER() fprintf(stderr, "LINE: %u\n", __LINE__)
@@ -46,7 +51,6 @@ enum sfce_boolean {
 
 enum sfce_error_code {
     SFCE_ERROR_OK,
-    SFCE_ERROR_BAD,
     SFCE_ERROR_NEGATIVE_BUFFER_SIZE,
     SFCE_ERROR_BAD_INSERTION,
     SFCE_ERROR_MEMORY_ALLOCATION_FAILURE,
@@ -59,6 +63,7 @@ enum sfce_error_code {
     SFCE_ERROR_FAILED_CONSOLE_STATE_RESTORE,
     SFCE_ERROR_FAILED_CONSOLE_STATE_SAVE,
     SFCE_ERROR_WIN32_API_FAILED,
+    SFCE_ERROR_UNIX_API_FAILED,
     SFCE_ERROR_FORMATED_STRING_TOO_LARGE,
 };
 
@@ -215,7 +220,9 @@ struct sfce_console_buffer {
 int32_t round_multiple_of_two(int32_t value, int32_t multiple);
 int32_t newline_sequence_size(const char *buffer, int32_t buffer_size);
 int32_t buffer_newline_count(const char *buffer, int32_t buffer_size);
-struct sfce_window_size sfce_get_console_screen_size();
+enum sfce_error_code sfce_get_console_screen_size(struct sfce_window_size *window_size);
+enum sfce_error_code sfce_write(const void *buffer, int32_t buffer_size);
+enum sfce_error_code sfce_write_string(const char *buffer);
 enum sfce_error_code sfce_enable_console_temp_buffer();
 enum sfce_error_code sfce_disable_console_temp_buffer();
 enum sfce_error_code sfce_save_console_state(struct sfce_console_state *state);
@@ -401,6 +408,7 @@ int main(int argc, const char *argv[])
     struct sfce_string command_sequence = {};
     struct sfce_string line_contents = {};
     struct sfce_piece_tree *tree = sfce_piece_tree_create(SFCE_NEWLINE_TYPE_CRLF);
+    struct sfce_window_size window_size;
 
     error_code = sfce_piece_tree_load_file(tree, filepath);
     if (error_code != SFCE_ERROR_OK) {
@@ -466,7 +474,11 @@ int main(int argc, const char *argv[])
             break;
         }
 
-        struct sfce_window_size window_size = sfce_get_console_screen_size();
+        error_code = sfce_get_console_screen_size(&window_size);
+        if (error_code != SFCE_ERROR_OK) {
+            continue;
+        }
+
         sfce_string_clear(&command_sequence);
         sfce_string_append_formated_string(&command_sequence, "\x1b[0;0H");
 
@@ -501,16 +513,10 @@ int main(int argc, const char *argv[])
 
     // sfce_restore_console(&console_state);
 
-
     // sfce_piece_node_inorder_print(tree, tree->root);
     sfce_restore_console(&console_state);
     sfce_string_destroy(&command_sequence);
     sfce_string_destroy(&line_contents);
-
-    fprintf(stderr, "================================ TREE OUTPUT ================================\n");
-    sfce_piece_node_print(tree, tree->root, 0);
-    fprintf(stderr, "================================ TREE OUTPUT ================================\n");
-
     sfce_piece_tree_destroy(tree);
     return 0;
 
@@ -534,6 +540,26 @@ int32_t newline_sequence_size(const char *buffer, int32_t buffer_size)
     }
 
     return 0;
+}
+
+enum sfce_error_code sfce_write(const void *buffer, int32_t buffer_size)
+{
+#if defined(SFCE_PLATFORM_WINDOWS)
+    static DWORD dummy = 0;
+    if (!WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), buffer, buffer_size, &dummy, NULL)) {
+        return SFCE_ERROR_FAILED_CONSOLE_WRITE;
+    }
+#elif defined(SFCE_PLATFORM_LINUX) || defined(SFCE_PLATFORM_MAC)
+    if (write(STDOUT_FILENO, buffer, buffer_size) == -1) {
+        return SFCE_ERROR_FAILED_CONSOLE_WRITE;
+    }
+#endif
+    return SFCE_ERROR_OK;
+}
+
+enum sfce_error_code sfce_write_string(const char *buffer)
+{
+    return sfce_write(buffer, strlen(buffer));
 }
 
 int32_t buffer_newline_count(const char *buffer, int32_t buffer_size)
@@ -615,49 +641,45 @@ enum sfce_error_code sfce_enable_virtual_terminal(const struct sfce_console_stat
     return SFCE_ERROR_OK;
 }
 
-struct sfce_window_size sfce_get_console_screen_size()
+enum sfce_error_code sfce_get_console_screen_size(struct sfce_window_size *window_size)
 {
-    struct sfce_window_size window_size = {0};
-
-    fprintf(stdout, "\x1b[s\x1b[32767;32767H");
+    enum sfce_error_code error_code = sfce_write_string("\x1b[s\x1b[32767;32767H");
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
+    }
 
 #if defined(SFCE_PLATFORM_WINDOWS)
     HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
     CONSOLE_SCREEN_BUFFER_INFO cbsi = {};
     if (!GetConsoleScreenBufferInfo(handle, &cbsi)) {
-        return (struct sfce_window_size) {};
+        return SFCE_ERROR_FAILED_CONSOLE_READ;
     }
 
-    window_size.width = cbsi.dwCursorPosition.X + 1;
-    window_size.height = cbsi.dwCursorPosition.Y + 1;
+    window_size->width = cbsi.dwCursorPosition.X + 1;
+    window_size->height = cbsi.dwCursorPosition.Y + 1;
 #else
     window_size.width = 0;
     window_size.height = 0;
 #endif
 
-    fprintf(stdout, "\x1b[u");
+    error_code = sfce_write_string("\x1b[u");
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
+    }
 
-    return window_size;
+    return SFCE_ERROR_OK;
 }
 
 enum sfce_error_code sfce_enable_console_temp_buffer()
 {
-    int size = fprintf(stdout, "\x1b[?47h\x1b[?25l\x1b[?1049h");
-    if (size < 0) {
-        return SFCE_ERROR_FAILED_CONSOLE_WRITE;
-    }
-
-    return SFCE_ERROR_OK;
+    const char buffer[] = "\x1b[?47h\x1b[?25l\x1b[?1049h";
+    return sfce_write(buffer, sizeof(buffer) - 1);
 }
 
 enum sfce_error_code sfce_disable_console_temp_buffer()
 {
-    int size = fprintf(stdout, "\x1b[?47l\x1b[?25h\x1b[?1049l");
-    if (size < 0) {
-        return SFCE_ERROR_FAILED_CONSOLE_WRITE;
-    }
-
-    return SFCE_ERROR_OK;
+    const char buffer[] = "\x1b[?47l\x1b[?25h\x1b[?1049l";
+    return sfce_write(buffer, sizeof(buffer) - 1);
 }
 
 enum sfce_error_code sfce_setup_console(struct sfce_console_state *state)
@@ -852,19 +874,7 @@ enum sfce_error_code sfce_string_append_formated_string(struct sfce_string *stri
 
 enum sfce_error_code sfce_string_flush(struct sfce_string *string)
 {
-    static DWORD dummy = 0;
-    
-    if (!WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), string->data, string->size, &dummy, NULL)) {
-        return SFCE_ERROR_WIN32_API_FAILED;
-    }
-
-    // int size = fprintf(stdout, "%.*s", (int)string->size, string->data);
-    
-    // if (size < 0) {
-    //     return SFCE_ERROR_FORMATED_STRING_TOO_LARGE;
-    // }
-
-    return SFCE_ERROR_OK;
+    return sfce_write(string->data, string->size);
 }
 
 void sfce_string_clear(struct sfce_string *string)
@@ -1708,21 +1718,6 @@ int32_t sfce_piece_tree_line_number_offset_within_piece(struct sfce_piece_tree *
     }
 
     return line_starts->offsets[line_number_within_buffer] - start_offset;
-
-// fprintf(stderr, "{\n\
-//     start_offset: %d\n\
-//     line_offset: %d\n\
-//     end_offset: %d\n\
-// }\n", start_offset, line_offset, end_offset);
-
-//     if (line_offset < start_offset) {
-//         return 0;
-//     }
-//     else if (line_offset > end_offset) {
-//         return end_offset - start_offset;
-//     }
-
-//     return line_offset - start_offset;
 }
 
 struct sfce_string_view sfce_piece_tree_get_piece_content(struct sfce_piece_tree *tree, struct sfce_piece piece)
@@ -1814,15 +1809,6 @@ struct sfce_node_position sfce_piece_tree_node_at_row_and_col(struct sfce_piece_
             int32_t line_offset0 = sfce_piece_tree_line_number_offset_within_piece(tree, node->piece, lines_within_piece);
             int32_t line_offset1 = sfce_piece_tree_line_number_offset_within_piece(tree, node->piece, lines_within_piece + 1);
             int32_t line_length = line_offset1 - line_offset0;
-
-// fprintf(stderr, "\
-// {\n\
-//     lines_within_piece: %d\n\
-//     line_offset0: %d\n\
-//     line_offset1: %d\n\
-//     line_length: %d\n\
-// }\n\
-// ", lines_within_piece, line_offset0, line_offset1, line_length);
 
             return (struct sfce_node_position) {
                 .node = node,
@@ -2136,22 +2122,7 @@ enum sfce_error_code sfce_piece_tree_load_file(struct sfce_piece_tree *tree, con
 enum sfce_error_code sfce_piece_tree_get_line_content(struct sfce_piece_tree *tree, int32_t row, struct sfce_string *string)
 {
     struct sfce_node_position position0 = sfce_piece_tree_node_at_row_and_col(tree, row, 0);
-    // struct sfce_node_position position1 = sfce_piece_tree_node_at_row_and_col(tree, row + 1, 0);
     struct sfce_node_position position1 = sfce_piece_tree_get_node_position_next_line(tree, position0);
-
-//     fprintf(stderr,
-// "position0 = {\n\
-//     .node: %p\n\
-//     .offset_within_piece: %d\n\
-//     .node_start_offset: %d\n\
-// }\n", position0.node, position0.offset_within_piece, position0.node_start_offset);
-//     fprintf(stderr,
-// "position1 = {\n\
-//     .node: %p\n\
-//     .offset_within_piece: %d\n\
-//     .node_start_offset: %d\n\
-// }\n", position1.node, position1.offset_within_piece, position1.node_start_offset);
-
     return sfce_piece_tree_get_content_between_node_positions(tree, position0, position1, string);
 }
 
