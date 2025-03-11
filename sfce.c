@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <assert.h>
+#include <math.h>
 
 #if defined(SFCE_PLATFORM_WINDOWS)
 #  include <windows.h>
@@ -37,6 +38,8 @@
 #define ENABLE_CONSOLE
 
 enum {
+    SFCE_DEFAULT_TAB_SIZE = 4,
+
     SFCE_FILE_READ_CHUNK_SIZE = 1024,
     SFCE_STRING_BUFFER_SIZE_THRESHOLD = 0xFFFF,
     
@@ -52,6 +55,7 @@ enum {
 
 enum sfce_error_code {
     SFCE_ERROR_OK,
+    SFCE_ERROR_NULL_POINTER,
     SFCE_ERROR_BUFFER_OVERFLOW,
     SFCE_ERROR_UNABLE_TO_OPEN_FILE,
     SFCE_ERROR_NEGATIVE_BUFFER_SIZE,
@@ -75,12 +79,12 @@ enum sfce_red_black_color {
     SFCE_COLOR_RED   = 1,
 };
 
-enum sfce_newline_type {
-    SFCE_NEWLINE_TYPE_NONE,
-    SFCE_NEWLINE_TYPE_CRLF,
-    SFCE_NEWLINE_TYPE_CR,
-    SFCE_NEWLINE_TYPE_LF,
-};
+// enum sfce_newline_type {
+//     SFCE_NEWLINE_TYPE_NONE,
+//     SFCE_NEWLINE_TYPE_CRLF,
+//     SFCE_NEWLINE_TYPE_CR,
+//     SFCE_NEWLINE_TYPE_LF,
+// };
 
 enum sfce_console_attribute {
     SFCE_CONSOLE_ATTRIBUTE_NONE = 0, // reset all modes (styles and colors)
@@ -182,10 +186,10 @@ struct sfce_window_size {
     int32_t height;
 };
 
-struct sfce_point {
-    int32_t x;
-    int32_t y;
-};
+// struct sfce_point {
+//     int32_t x;
+//     int32_t y;
+// };
 
 struct sfce_string {
     char   *data;
@@ -256,7 +260,6 @@ struct sfce_piece_tree {
     int32_t                    line_count;
     int32_t                    length;
     int32_t                    change_buffer_index;
-    enum sfce_newline_type     newline_type;
 };
 
 struct sfce_piece_tree_snapshot {
@@ -294,8 +297,8 @@ struct sfce_console_buffer {
     struct sfce_console_state save_state;
     struct sfce_string        command;
     struct sfce_console_cell *cells;
-    int32_t                   width;
-    int32_t                   height;
+    struct sfce_window_size   window_size;
+    int32_t                   tab_size;
     unsigned                  use_truecolor: 1;
 };
 
@@ -311,6 +314,34 @@ struct sfce_utf8_property {
     unsigned                        width: 2;
     unsigned                        length: 3;
     unsigned                        bidi_mirrored: 1;
+};
+
+struct sfce_rectangle {
+    int32_t left;
+    int32_t top;
+    int32_t right;
+    int32_t bottom;
+};
+
+struct sfce_mark {
+    int32_t col;
+    int32_t row;
+    int32_t target_render_col;
+};
+
+struct sfce_cursor {
+    struct editor_window *editor;
+    struct sfce_mark      mark;
+    struct sfce_mark      anchor;
+    struct sfce_string    copy_buffer;
+    unsigned              is_selecting: 1;
+};
+
+struct sfce_editor_window {
+    struct sfce_cursor         cursor;
+    struct sfce_piece_tree    *tree;
+    struct console_buffer     *console;
+    struct sfce_rectangle      rectangle;
 };
 
 int32_t round_multiple_of_two(int32_t value, int32_t multiple);
@@ -335,7 +366,6 @@ enum sfce_error_code sfce_save_console_state(struct sfce_console_state *state);
 enum sfce_error_code sfce_restore_console_state(const struct sfce_console_state *state);
 enum sfce_error_code sfce_enable_virtual_terminal(const struct sfce_console_state *state);
 enum sfce_error_code sfce_setup_console(struct sfce_console_state *state);
-enum sfce_error_code sfce_restore_console(const struct sfce_console_state *state);
 
 void sfce_string_destroy(struct sfce_string *string);
 enum sfce_error_code sfce_string_reserve(struct sfce_string *result, int32_t capacity);
@@ -390,14 +420,12 @@ void sfce_piece_node_reset_sentinel();
 
 struct sfce_node_position sfce_piece_node_position_move_by_offset(struct sfce_node_position position, int32_t offset); // Unused function
 
-struct sfce_piece_tree *sfce_piece_tree_create(enum sfce_newline_type newline_type);
+struct sfce_piece_tree *sfce_piece_tree_create();
 void sfce_piece_tree_destroy(struct sfce_piece_tree *tree);
 int32_t sfce_piece_tree_offset_of_line_number_within_piece(struct sfce_piece_tree *tree, struct sfce_piece piece, int32_t line_number);
 int32_t sfce_piece_tree_count_lines_in_piece_until_offset(struct sfce_piece_tree *tree, struct sfce_piece piece, int32_t offset);
 int32_t sfce_piece_tree_character_at_node_position(struct sfce_piece_tree *tree, struct sfce_node_position position);
 int32_t sfce_piece_tree_codepoint_at_node_position(struct sfce_piece_tree *tree, struct sfce_node_position position);
-struct sfce_string_view sfce_piece_tree_get_piece_content(const struct sfce_piece_tree *tree, struct sfce_piece *piece);
-enum sfce_error_code sfce_piece_tree_get_node_content(const struct sfce_piece_tree *tree, struct sfce_piece_node *node, struct sfce_string *string);
 int32_t sfce_piece_tree_offset_at_position(struct sfce_piece_tree *tree, int32_t row, int32_t col);
 struct sfce_position sfce_piece_tree_position_at_offset(struct sfce_piece_tree *tree, int32_t offset);
 struct sfce_node_position sfce_node_position_move_by_offset(struct sfce_node_position position, int32_t offset);
@@ -405,7 +433,10 @@ struct sfce_node_position sfce_piece_tree_node_at_offset(struct sfce_piece_tree 
 struct sfce_node_position sfce_piece_tree_node_at_position(struct sfce_piece_tree *tree, int32_t row, int32_t col);
 struct sfce_node_position sfce_piece_tree_get_node_position_prev_line(struct sfce_piece_tree *tree, const struct sfce_node_position position);
 struct sfce_node_position sfce_piece_tree_get_node_position_next_line(struct sfce_piece_tree *tree, const struct sfce_node_position position);
+struct sfce_string_view sfce_piece_tree_get_piece_content(const struct sfce_piece_tree *tree, struct sfce_piece *piece);
+enum sfce_error_code sfce_piece_tree_get_node_content(const struct sfce_piece_tree *tree, struct sfce_piece_node *node, struct sfce_string *string);
 enum sfce_error_code sfce_piece_tree_get_substring(struct sfce_piece_tree *tree, int32_t offset, int32_t length, struct sfce_string *string);
+enum sfce_error_code sfce_piece_tree_get_line_content(struct sfce_piece_tree *tree, int32_t line_number, struct sfce_string *string);
 enum sfce_error_code sfce_piece_tree_get_content_between_node_positions(struct sfce_piece_tree *tree, struct sfce_node_position position0, struct sfce_node_position position1, struct sfce_string *string);
 enum sfce_error_code sfce_piece_tree_ensure_change_buffer_size(struct sfce_piece_tree *tree, int32_t required_size);
 enum sfce_error_code sfce_piece_tree_set_buffer_count(struct sfce_piece_tree *tree, int32_t buffer_count);
@@ -414,27 +445,24 @@ enum sfce_error_code sfce_piece_tree_create_node_subtree(struct sfce_piece_tree 
 enum sfce_error_code sfce_piece_tree_create_piece(struct sfce_piece_tree *tree, const char *data, int32_t byte_count, struct sfce_piece *result_piece);
 enum sfce_error_code sfce_piece_tree_insert_with_offset(struct sfce_piece_tree *tree, int32_t offset, const char *data, int32_t byte_count);
 enum sfce_error_code sfce_piece_tree_erase_with_offset(struct sfce_piece_tree *tree, int32_t offset, int32_t byte_count);
+enum sfce_error_code sfce_piece_tree_insert_with_position(struct sfce_piece_tree *tree, struct sfce_position position, const char *data, int32_t byte_count);
+enum sfce_error_code sfce_piece_tree_erase_with_position(struct sfce_piece_tree *tree, struct sfce_position start, struct sfce_position end);
 enum sfce_error_code sfce_piece_tree_insert_with_node_position(struct sfce_piece_tree *tree, struct sfce_node_position position, const char *data, int32_t byte_count);
 enum sfce_error_code sfce_piece_tree_erase_with_node_position(struct sfce_piece_tree *tree, struct sfce_node_position start, struct sfce_node_position end);
 enum sfce_error_code sfce_piece_tree_load_file(struct sfce_piece_tree *tree, const char *filepath);
-enum sfce_error_code sfce_piece_tree_get_line_content(struct sfce_piece_tree *tree, int32_t line_number, struct sfce_string *string);
 enum sfce_error_code sfce_piece_tree_create_snapshot(struct sfce_piece_tree *tree, struct sfce_piece_tree_snapshot *snapshot);
 void sfce_piece_tree_recompute_metadata(struct sfce_piece_tree *tree);
 
 enum sfce_error_code sfce_piece_tree_snapshot_set_piece_count(struct sfce_piece_tree_snapshot *snapshot, int32_t count);
 enum sfce_error_code sfce_piece_tree_snapshot_add_piece(struct sfce_piece_tree_snapshot *snapshot, struct sfce_piece piece);
 
+void sfce_console_buffer_destroy(struct sfce_console_buffer *console);
 enum sfce_error_code sfce_console_buffer_create(struct sfce_console_buffer *console);
 enum sfce_error_code sfce_console_buffer_update(struct sfce_console_buffer *console);
 enum sfce_error_code sfce_console_buffer_printf(struct sfce_console_buffer *console, int32_t col, int32_t row, struct sfce_console_style style, const char *format, ...);
 enum sfce_error_code sfce_console_buffer_set_cell(struct sfce_console_buffer *console, int32_t col, int32_t row, struct sfce_console_cell cell);
-
-// enum sfce_error_code sfce_console_buffer_set_cell(struct sfce_console_buffer *console, int32_t col, int32_t row, struct sfce_console_cell cell);
-// enum sfce_error_code sfce_console_buffer_set_character(struct sfce_console_buffer *console, int32_t col, int32_t row, int32_t character);
-// enum sfce_error_code sfce_console_buffer_set_foreground(struct sfce_console_buffer *console, int32_t col, int32_t row, int32_t color);
-// enum sfce_error_code sfce_console_buffer_set_background(struct sfce_console_buffer *console, int32_t col, int32_t row, int32_t color);
-// enum sfce_error_code sfce_console_buffer_set_attributes(struct sfce_console_buffer *console, int32_t col, int32_t row, int32_t attributes);
 enum sfce_error_code sfce_console_buffer_flush(struct sfce_console_buffer *console);
+
 
 static struct sfce_piece_node sentinel = {
     .parent = &sentinel,
@@ -7808,7 +7836,7 @@ void run_sfce_piece_tree_test()
 {
     fprintf(stderr, "------------------------------------- PIECE TREE TEST BEGIN -------------------------------------\n");
 
-    struct sfce_piece_tree *tree = sfce_piece_tree_create(SFCE_NEWLINE_TYPE_CRLF);
+    struct sfce_piece_tree *tree = sfce_piece_tree_create();
     sfce_piece_tree_insert_with_offset(tree, 0, "123", 3);
     sfce_piece_tree_insert_with_offset(tree, 0, "abc", 3);
 
@@ -7857,11 +7885,11 @@ void run_sfce_piece_tree_test()
 //     return 0;
 // }
 
-int main0(void)
+int main_1(void)
 {
     enum sfce_error_code error_code;
     struct sfce_console_buffer console = {};
-
+    
     if (sfce_console_buffer_create(&console) != SFCE_ERROR_OK) {
         goto error;
     }
@@ -7870,15 +7898,162 @@ int main0(void)
         goto error;
     }
 
+    error_code = sfce_console_buffer_flush(&console);
+
+    if (error_code != SFCE_ERROR_OK) {
+        goto error;
+    }
+
+    sfce_console_buffer_destroy(&console);
+
+    return 0;
+
+error:
+    fprintf(stderr, "ERROR_CODE: %d\n", error_code);
+    sfce_restore_console_state(&console.save_state);
+    return -1;
+}
+
+int main(int argc, const char *argv[])
+{
+    enum sfce_error_code error_code;
+    const struct sfce_console_style style = {
+        .foreground = 0x00FFFFFF
+    };
+
+    const struct sfce_console_style line_number_style = {
+        // .foreground = 0x00FAD02C,
+        .foreground = 0x00525252,
+    };
+
+    struct sfce_console_buffer console = {};
+    error_code = sfce_console_buffer_create(&console);
+    if (error_code != SFCE_ERROR_OK) {
+        goto error;
+    }
+
+    struct sfce_piece_tree *tree = sfce_piece_tree_create();
+
+    if (argc != 1) {
+        error_code = sfce_piece_tree_load_file(tree, argv[1]);
+        if (error_code != SFCE_ERROR_OK) {
+            goto error;
+        }
+    }
+
+    struct sfce_string line_contents = {};
+    for (int32_t idx = 0; idx < tree->line_count; ++idx) {
+        if (idx >= console.window_size.height) {
+            break;
+        }
+
+        error_code = sfce_piece_tree_get_line_content(tree, idx, &line_contents);
+
+        if (error_code != SFCE_ERROR_OK) {
+            goto error;
+        }
+
+        int32_t line_number = idx + 1;
+        int32_t digit_count = log10l(line_number) + 1;
+        int32_t line_padding_size = digit_count + SFCE_DEFAULT_TAB_SIZE - (digit_count % SFCE_DEFAULT_TAB_SIZE);
+
+        sfce_console_buffer_printf(&console, 0, idx, line_number_style, "%*d", line_padding_size, line_number);
+        sfce_console_buffer_printf(&console, line_padding_size + 1, idx, style, "%.*s", (int)line_contents.size, line_contents.data);
+    }
+
+    sfce_string_destroy(&line_contents);
+
+    error_code = sfce_console_buffer_flush(&console);
+    if (error_code != SFCE_ERROR_OK) {
+        goto error;
+    }
+
+    _getch();
+
+    sfce_console_buffer_destroy(&console);
+    sfce_piece_tree_destroy(tree);
+    return 0;
+
+error:
+    fprintf(stderr, "ERROR_CODE: %d\n", error_code);
+    sfce_console_buffer_destroy(&console);
+    sfce_piece_tree_destroy(tree);
+    return -1;
+}
+
+int _main(int argc, const char *argv[])
+{
+    if (argc == 1) {
+        printf("USAGE: sfce path/to/file");
+        return 0;
+    }
+
+    enum sfce_error_code error_code;
+    const struct sfce_console_style style = {
+        .foreground = 0x00FFFFFF
+    };
+
+    const struct sfce_console_style line_number_style = {
+        // .foreground = 0x00FAD02C,
+        .foreground = 0x00525252,
+    };
+
+    // fprintf(stderr, "sfce_piece_tree_load_file ran successfuly\n");
+
+    struct sfce_console_buffer console = {};
+    error_code = sfce_console_buffer_create(&console);
+    if (error_code != SFCE_ERROR_OK) {
+        goto error;
+    }
+
+    // fprintf(stderr, "sfce_console_buffer_create ran successfuly\n");
+
+    struct sfce_piece_tree *tree = sfce_piece_tree_create();
+
+    if (argc != 1) {
+        error_code = sfce_piece_tree_load_file(tree, argv[1]);
+        if (error_code != SFCE_ERROR_OK) {
+            goto error;
+        }
+    }
+
+    struct sfce_string line_contents = {};
+    for (int32_t idx = 0; idx < tree->line_count; ++idx) {
+        if (idx >= console.window_size.height) {
+            break;
+        }
+
+        
+        // fprintf(stderr, "getting line content ...\n");
+        error_code = sfce_piece_tree_get_line_content(tree, idx, &line_contents);
+        // fprintf(stderr, "sfce_piece_tree_get_line_content ran successfuly\n");
+
+        if (error_code != SFCE_ERROR_OK) {
+            goto error;
+        }
+
+        int32_t line_number = idx + 1;
+        int32_t digit_count = log10l(line_number) + 1;
+        // fprintf(stderr, "digit_count: %d\n", digit_count);
+        int32_t line_padding_size = digit_count + SFCE_DEFAULT_TAB_SIZE - (digit_count % SFCE_DEFAULT_TAB_SIZE);
+
+        sfce_console_buffer_printf(&console, 0, idx, line_number_style, "%*d", line_padding_size, line_number);
+        sfce_console_buffer_printf(&console, line_padding_size + 1, idx, style, "%.*s", (int)line_contents.size, line_contents.data);
+    }
+
+    sfce_string_destroy(&line_contents);
+
     // console.cells[0].codepoint = sfce_utf8_decode_codepoint("😁", 4);
     // console.cells[0].style.foreground = 0x00FFFFFF;
 
     // console.cells[5].codepoint = sfce_utf8_decode_codepoint("😁", 4);
     // console.cells[5].style.foreground = 0x00FFFFFF;
-    const struct sfce_console_style style = { .foreground = 0x00FFFFFF };
 
-    sfce_console_buffer_printf(&console, 0, 0, style, "😁    😁    😁\r\n😁    😁    😁\r😁    😁    😁\n😁    😁    😁\n😁😁😁\nxxxxxx");
-
+    // sfce_console_buffer_printf(&console, 0, 0, style, "😁    😁    😁\r\n😁    😁    😁\r😁    😁    😁\n😁    😁    😁\n😁😁😁\nxxxxxx");
+    // sfce_console_buffer_printf(&console, 0, 0, style, "😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁");
+    // sfce_console_buffer_printf(&console, 50, 0, style, "int main(void)\n{\n\tprintf(\"Hello, World\")\n\treturn 0;\n}");
+    // sfce_console_buffer_printf(&console, 0, 0, style, "int\n\tf");
+    
     error_code = sfce_console_buffer_flush(&console);
     if (error_code != SFCE_ERROR_OK) {
         goto error;
@@ -7928,7 +8103,10 @@ int main0(void)
     //     // Sleep(1000);
     // }
 
-    sfce_restore_console(&console.save_state);
+    sfce_restore_console_state(&console.save_state);
+
+    printf("console.width: %d\n", console.window_size.width);
+
     // for (int32_t idx = 0; idx < console.command_buffers[0].size; ++idx) {
     //     char *buffer = make_character_printable(console.command_buffers[0].data[idx]);
     //     sfce_write_string(buffer);
@@ -7939,7 +8117,7 @@ int main0(void)
 
 error:
     fprintf(stderr, "ERROR_CODE: %d\n", error_code);
-    sfce_restore_console(&console.save_state);
+    sfce_restore_console_state(&console.save_state);
     return -1;
 }
 
@@ -7961,7 +8139,7 @@ int main1(void)
     return 0;
 }
 
-int main(int argc, const char *argv[])
+int main_(int argc, const char *argv[])
 {
     run_sfce_piece_tree_test();
 
@@ -7980,7 +8158,7 @@ int main(int argc, const char *argv[])
 
     struct sfce_string command_sequence = {};
     struct sfce_string line_contents = {};
-    struct sfce_piece_tree *tree = sfce_piece_tree_create(SFCE_NEWLINE_TYPE_NONE);
+    struct sfce_piece_tree *tree = sfce_piece_tree_create();
     struct sfce_window_size window_size;
 
     if (argc > 1) {
@@ -8126,7 +8304,7 @@ int main(int argc, const char *argv[])
     }
 
 #ifdef ENABLE_CONSOLE
-    sfce_restore_console(&console_state);
+    sfce_restore_console_state(&console_state);
 #endif // ENABLE_CONSOLE
     sfce_string_destroy(&command_sequence);
     sfce_string_destroy(&line_contents);
@@ -8143,7 +8321,7 @@ int main(int argc, const char *argv[])
 
 error:
 #ifdef ENABLE_CONSOLE
-    sfce_restore_console(&console_state);
+    sfce_restore_console_state(&console_state);
 #endif // ENABLE_CONSOLE
 
     sfce_piece_tree_destroy(tree);
@@ -8435,6 +8613,12 @@ enum sfce_error_code sfce_save_console_state(struct sfce_console_state *state)
 
 enum sfce_error_code sfce_restore_console_state(const struct sfce_console_state *state)
 {
+    enum sfce_error_code error_code = sfce_disable_console_temp_buffer();
+
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
+    }
+
     if (!SetConsoleMode(state->output_handle, state->output_mode)) {
         return SFCE_ERROR_FAILED_WIN32_API_CALL;
     }
@@ -8494,8 +8678,8 @@ enum sfce_error_code sfce_get_console_screen_size(struct sfce_window_size *windo
     window_size->width = cbsi.dwCursorPosition.X + 1;
     window_size->height = cbsi.dwCursorPosition.Y + 1;
 #else
-    window_size.width = 0;
-    window_size.height = 0;
+    window_size->width = 0;
+    window_size->height = 0;
 #endif
 
     error_code = sfce_write_zero_terminated("\x1b[u");
@@ -8541,21 +8725,6 @@ enum sfce_error_code sfce_setup_console(struct sfce_console_state *state)
 
     if (!SetConsoleOutputCP(CP_UTF8)) {
         return SFCE_ERROR_FAILED_WIN32_API_CALL;
-    }
-
-    return SFCE_ERROR_OK;
-}
-
-enum sfce_error_code sfce_restore_console(const struct sfce_console_state *state)
-{
-    enum sfce_error_code error_code = sfce_disable_console_temp_buffer();
-    if (error_code != SFCE_ERROR_OK) {
-        return error_code;
-    }
-
-    error_code = sfce_restore_console_state(state);
-    if (error_code != SFCE_ERROR_OK) {
-        return error_code;
     }
 
     return SFCE_ERROR_OK;
@@ -9463,7 +9632,7 @@ struct sfce_node_position sfce_piece_node_position_move_by_offset(struct sfce_no
             position.node = next;
             continue;
         }
-        
+
         if (position.offset_within_piece < 0) {
             struct sfce_piece_node *prev = sfce_piece_node_prev(position.node);
             if (prev == sentinel_ptr) {
@@ -9486,14 +9655,13 @@ struct sfce_node_position sfce_piece_node_position_move_by_offset(struct sfce_no
     return (struct sfce_node_position) { .node = sentinel_ptr };
 }
 
-struct sfce_piece_tree *sfce_piece_tree_create(enum sfce_newline_type newline_type)
+struct sfce_piece_tree *sfce_piece_tree_create()
 {
     struct sfce_piece_tree *tree = malloc(sizeof *tree);
 
     if (tree != NULL) {
         *tree = (struct sfce_piece_tree) {
             .root = sentinel_ptr,
-            .newline_type = newline_type,
         };
 
         enum sfce_error_code error_code = sfce_piece_tree_add_new_string_buffer(tree);
@@ -9562,13 +9730,13 @@ int32_t sfce_piece_tree_character_at_node_position(struct sfce_piece_tree *tree,
     struct sfce_string_buffer *string_buffer = &tree->buffers[position.node->piece.buffer_index];
     int32_t offset_begin = sfce_string_buffer_position_to_offset(string_buffer, position.node->piece.start);
     int32_t offset_end = sfce_string_buffer_position_to_offset(string_buffer, position.node->piece.end);
-    int32_t offset = position.node_start_offset + position.offset_within_piece;
+    int32_t offset_within_buffer = offset_begin + position.offset_within_piece;
 
-    if (offset > offset_end || offset < offset_begin) {
+    if (offset_within_buffer >= offset_end) {
         return 0;
     }
 
-    return string_buffer->content.data[offset];
+    return string_buffer->content.data[offset_within_buffer];
 }
 
 int32_t sfce_piece_tree_codepoint_at_node_position(struct sfce_piece_tree *tree, struct sfce_node_position position)
@@ -9583,46 +9751,12 @@ int32_t sfce_piece_tree_codepoint_at_node_position(struct sfce_piece_tree *tree,
     return sfce_decode_utf8_codepoint(buffer, 4);
 }
 
-// int32_t sfce_piece_tree_count_lines_in_piece_until_offset(struct sfce_piece_tree *tree, struct sfce_piece piece, int32_t offset)
-// {
-//     struct sfce_line_starts *line_starts = &tree->buffers[piece.buffer_index].line_starts;
-//     int32_t offset_within_buffer = line_starts->offsets[piece.start.line_start_index] + piece.start.column + offset;
-//     int32_t line_start_index = piece.start.line_start_index;
-
-//     while (line_start_index                       <  piece.end.line_start_index
-//     &&     line_starts->offsets[line_start_index] <= offset_within_buffer) {
-//         line_start_index += 1;
-//     }
-
-//     line_start_index = line_start_index - piece.start.line_start_index - 1;
-//     return MAX(0, line_start_index);
-// }
-
-// int32_t sfce_piece_tree_codepoint_at_position(struct sfce_piece_tree *tree, struct sfce_node_position position)
-// {
-//     char codepoint_buffer[4] = {0};
-
-//     for (int32_t idx = 0; idx < 4; ++idx) {
-//         codepoint_buffer[idx] = sfce_piece_tree_byte_at_position(tree, position);
-//         position = sfce_piece_node_position_move_by_offset(position, 1);
-
-//         if (position.node_start_offset + position.offset_within_piece >= tree->length) {
-//             break;
-//         }
-//     }
-
-//     return sfce_utf8_decode_codepoint(codepoint_buffer, 4).value;
-// }
-
-// int32_t sfce_piece_tree_byte_at_position(struct sfce_piece_tree *tree, struct sfce_node_position position)
-// {
-//     struct sfce_string_buffer *string_buffer = &tree->buffers[position.node->piece.buffer_index];
-//     int32_t piece_offset = sfce_string_buffer_position_to_offset(string_buffer, position.node->piece.start);
-//     return string_buffer->content.data[piece_offset + position.offset_within_piece];
-// }
-
 struct sfce_string_view sfce_piece_tree_get_piece_content(const struct sfce_piece_tree *tree, struct sfce_piece *piece)
 {
+    if (piece == NULL) {
+        return (struct sfce_string_view) {};
+    }
+
     struct sfce_string_buffer *string_buffer = &tree->buffers[piece->buffer_index];
     int32_t offset0 = sfce_string_buffer_position_to_offset(string_buffer, piece->start);
     int32_t offset1 = sfce_string_buffer_position_to_offset(string_buffer, piece->end);
@@ -9640,7 +9774,7 @@ enum sfce_error_code sfce_piece_tree_get_node_content(const struct sfce_piece_tr
     }
 
     enum sfce_error_code error_code;
-    
+
     error_code = sfce_piece_tree_get_node_content(tree, node->left, string);
 
     if (error_code != SFCE_ERROR_OK) {
@@ -10026,6 +10160,19 @@ enum sfce_error_code sfce_piece_tree_erase_with_offset(struct sfce_piece_tree *t
     return sfce_piece_tree_erase_with_node_position(tree, start, end);
 }
 
+enum sfce_error_code sfce_piece_tree_insert_with_position(struct sfce_piece_tree *tree, struct sfce_position position, const char *data, int32_t byte_count)
+{
+    struct sfce_node_position where = sfce_piece_tree_node_at_position(tree, position.row, position.col);
+    return sfce_piece_tree_insert_with_node_position(tree, where, data, byte_count);
+}
+
+enum sfce_error_code sfce_piece_tree_erase_with_position(struct sfce_piece_tree *tree, struct sfce_position start, struct sfce_position end)
+{
+    struct sfce_node_position start_node = sfce_piece_tree_node_at_position(tree, start.row, start.col);
+    struct sfce_node_position end_node = sfce_piece_tree_node_at_position(tree, end.row, end.col);
+    return sfce_piece_tree_erase_with_node_position(tree, start_node, end_node);
+}
+
 enum sfce_error_code sfce_piece_tree_insert_with_node_position(struct sfce_piece_tree *tree, struct sfce_node_position where, const char *data, int32_t byte_count)
 {
     enum sfce_error_code error_code;
@@ -10287,31 +10434,51 @@ enum sfce_error_code sfce_piece_tree_snapshot_add_piece(struct sfce_piece_tree_s
     return SFCE_ERROR_OK;
 }
 
+void sfce_console_buffer_destroy(struct sfce_console_buffer *console)
+{
+    sfce_string_destroy(&console->command);
+
+    if (console->cells != NULL) {
+        free(console->cells);
+    }
+
+    sfce_restore_console_state(&console->save_state);
+}
+
 enum sfce_error_code sfce_console_buffer_create(struct sfce_console_buffer *console)
 {
-    enum sfce_error_code error_code;
+    if (console == NULL) {
+        return SFCE_ERROR_NULL_POINTER;
+    }
 
-    error_code = sfce_setup_console(&console->save_state);
-
+    struct sfce_console_state save_state = {};
+    enum sfce_error_code error_code = sfce_setup_console(&save_state);
     if (error_code != SFCE_ERROR_OK) {
         return error_code;
     }
 
     struct sfce_window_size window_size = {};
     error_code = sfce_get_console_screen_size(&window_size);
-
     if (error_code != SFCE_ERROR_OK) {
         return error_code;
     }
 
-    console->cells = calloc(window_size.width * window_size.height, sizeof *console->cells);
-
-    if (console->cells == NULL) {
+    void *cells = calloc(window_size.width * window_size.height, sizeof *console->cells);
+    if (cells == NULL) {
         return SFCE_ERROR_OUT_OF_MEMORY;
     }
 
-    console->width  = window_size.width;
-    console->height = window_size.height;
+    *console = (struct sfce_console_buffer) {
+        .cells  = cells,
+        .save_state = save_state,
+        .window_size = window_size,
+        .tab_size = SFCE_DEFAULT_TAB_SIZE,
+    };
+
+    error_code = sfce_console_buffer_update(console);
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
+    }
 
     return SFCE_ERROR_OK;
 }
@@ -10325,7 +10492,7 @@ enum sfce_error_code sfce_console_buffer_update(struct sfce_console_buffer *cons
         return error_code;
     }
 
-    if (window_size.width != console->width || window_size.height != console->height) {
+    if (window_size.width != console->window_size.width || window_size.height != console->window_size.height) {
         void *temp = console->cells;
         console->cells = realloc(console->cells, window_size.width * window_size.height * sizeof *console->cells);
 
@@ -10335,8 +10502,7 @@ enum sfce_error_code sfce_console_buffer_update(struct sfce_console_buffer *cons
             return SFCE_ERROR_OUT_OF_MEMORY;
         }
         
-        console->width = window_size.width;
-        console->height = window_size.height;
+        console->window_size = window_size;
 
         // 
         // The console buffer should avoid using callbacks
@@ -10352,22 +10518,28 @@ enum sfce_error_code sfce_console_buffer_update(struct sfce_console_buffer *cons
 
 enum sfce_error_code sfce_console_buffer_printf(struct sfce_console_buffer *console, int32_t col, int32_t row, struct sfce_console_style style, const char *format, ...)
 {
-    enum { TEMP_BUFFER_SIZE = 4096 };
+    enum { TEMP_BUFFER_SIZE = 0x1000 };
+
+    static struct sfce_console_cell blank_cell = { .codepoint = ' ' };
+    static char temp_buffer[TEMP_BUFFER_SIZE] = {0};
 
     va_list va_args;
     va_start(va_args, format);
 
-    char temp_buffer[TEMP_BUFFER_SIZE] = {0};
     int temp_buffer_size = vsnprintf(temp_buffer, TEMP_BUFFER_SIZE, format, va_args);
     if (temp_buffer_size < 0) {
         return SFCE_ERROR_BUFFER_OVERFLOW;
     }
 
+    // fprintf(stderr, "Preparing a formatted string to print to the console.\n");
+
     va_end(va_args);
 
     char *iter = temp_buffer;
     char *end  = temp_buffer + temp_buffer_size;
+    struct sfce_position position = { .col = col, .row = row };
 
+    enum sfce_error_code error_code;
     while (iter < end) {
         int32_t remaining = end - iter;
         int32_t newline_size = newline_sequence_size(iter, remaining);
@@ -10376,8 +10548,22 @@ enum sfce_error_code sfce_console_buffer_printf(struct sfce_console_buffer *cons
 
         if (newline_size != 0) {
             iter += newline_size;
-            row += 1;
-            col = 0;
+            position.row += 1;
+            position.col = col;
+        }
+        else if (codepoint == '\t') {
+            const int32_t distance_from_edge = position.col - col;
+            const int32_t tab_width = console->tab_size - (distance_from_edge % console->tab_size);
+
+            for (int32_t idx = 0; idx < tab_width; ++idx) {
+                error_code = sfce_console_buffer_set_cell(console, position.col + idx, position.row, blank_cell);
+                if (error_code != SFCE_ERROR_OK) {
+                    return error_code;
+                }
+            }
+
+            position.col += tab_width;
+            iter += codepoint_byte_count;
         }
         else {
             struct sfce_console_cell cell = {
@@ -10385,27 +10571,32 @@ enum sfce_error_code sfce_console_buffer_printf(struct sfce_console_buffer *cons
                 .style = style,
             };
 
-            sfce_console_buffer_set_cell(console, col, row, cell);
+            error_code = sfce_console_buffer_set_cell(console, position.col, position.row, cell);
+            if (error_code != SFCE_ERROR_OK) {
+                return error_code;
+            }
 
             iter += codepoint_byte_count;
-            col += 1;
+            position.col += 1;
         }
     }
+    
+    // fprintf(stderr, "Printed the formatted string to the console.\n");
     
     return SFCE_ERROR_OK;
 }
 
 enum sfce_error_code sfce_console_buffer_set_cell(struct sfce_console_buffer *console, int32_t col, int32_t row, struct sfce_console_cell cell)
 {
-    if (col < 0 || col > console->width) {
+    if (col < 0 || col >= console->window_size.width) {
         return SFCE_ERROR_OUT_OF_BOUNDS;
     }
 
-    if (row < 0 || row > console->height) {
+    if (row < 0 || row >= console->window_size.height) {
         return SFCE_ERROR_OUT_OF_BOUNDS;
     }
 
-    console->cells[row * console->width + col] = cell;
+    console->cells[row * console->window_size.width + col] = cell;
     return SFCE_ERROR_OK;
 }
 
@@ -10422,13 +10613,13 @@ enum sfce_error_code sfce_console_buffer_flush(struct sfce_console_buffer *conso
 
     uint8_t buffer[4] = {};
     struct sfce_console_cell current = {}, previous = {};
-    for (int32_t idx = 0, row = 0; row < console->height; ++row) {
+    for (int32_t idx = 0, row = 0; row < console->window_size.height; ++row) {
         error_code = sfce_string_append_formated_string(&console->command, "\x1b[%d;0H\x1b[2K", row + 1);
         if (error_code != SFCE_ERROR_OK) {
             return error_code;
         }
 
-        for (int32_t col = 0; col < console->width; ++col, ++idx) {
+        for (int32_t col = 0; col < console->window_size.width; ++col, ++idx) {
             current = console->cells[idx];
 
             if (current.style.foreground != previous.style.foreground) {
