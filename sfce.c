@@ -51,6 +51,8 @@ enum {
     SFCE_STRING_BUFFER_ALLOCATION_SIZE = 16,
     SFCE_SNAPSHOT_ALLOCATION_SIZE = 16,
     SFCE_STRING_ALLOCATION_SIZE = 256,
+    SFCE_TRUE = 1,
+    SFCE_FALSE = 0,
 };
 
 enum sfce_error_code {
@@ -181,6 +183,12 @@ enum sfce_unicode_decomposition {
     SFCE_UNICODE_DECOMPOSITION_WIDE     = 16, // <wide>  Wide (or zenkaku) compatibility character
 };
 
+enum sfce_split_kind {
+    SFCE_SPLIT_NONE,
+    SFCE_SPLIT_HORIZONTAL,
+    SFCE_SPLIT_VERTICAL,
+};
+
 struct sfce_window_size {
     int32_t width;
     int32_t height;
@@ -270,12 +278,14 @@ struct sfce_piece_tree_snapshot {
 
 struct sfce_console_state {
 #if defined(SFCE_PLATFORM_WINDOWS)
-    HANDLE input_handle;
-    HANDLE output_handle;
-    DWORD  output_mode;
-    DWORD  input_mode;
-    UINT   input_code_page;
-    UINT   output_code_page;
+    HANDLE                       input_handle;
+    HANDLE                       output_handle;
+    DWORD                        output_mode;
+    DWORD                        input_mode;
+    UINT                         input_code_page;
+    UINT                         output_code_page;
+    CONSOLE_SCREEN_BUFFER_INFOEX console_screen_buffer_info;
+    CONSOLE_FONT_INFOEX          console_font_info;
 #elif defined(SFCE_PLATFORM_LINUX)
 #elif defined(SFCE_PLATFORM_APPLE)
 #elif defined(SFCE_PLATFORM_FREE_BSD)
@@ -295,6 +305,7 @@ struct sfce_console_cell {
 
 struct sfce_console_buffer {
     struct sfce_console_state save_state;
+    // struct sfce_string        printf_temp;
     struct sfce_string        command;
     struct sfce_console_cell *cells;
     struct sfce_window_size   window_size;
@@ -312,7 +323,7 @@ struct sfce_utf8_property {
     int32_t                         lowercase_mapping;
     int32_t                         titlecase_mapping;
     unsigned                        width: 2;
-    unsigned                        length: 3;
+    unsigned                        byte_count: 3;
     unsigned                        bidi_mirrored: 1;
 };
 
@@ -330,40 +341,54 @@ struct sfce_mark {
 };
 
 struct sfce_cursor {
-    struct editor_window *editor;
-    struct sfce_mark      mark;
-    struct sfce_mark      anchor;
-    struct sfce_string    copy_buffer;
-    unsigned              is_selecting: 1;
+    struct sfce_editor_window *editor;
+    struct sfce_mark           mark;
+    struct sfce_mark           anchor;
+    struct sfce_string         copy_buffer;
+    unsigned                   is_selecting: 1;
 };
 
 struct sfce_editor_window {
-    struct sfce_cursor         cursor;
-    struct sfce_piece_tree    *tree;
-    struct console_buffer     *console;
-    struct sfce_rectangle      rectangle;
+    struct sfce_cursor          *cursors;
+    uint32_t                     cursor_count;
+    uint32_t                     cursor_capacity;
+    const char                  *filepath;
+    struct sfce_piece_tree      *tree;
+    struct sfce_rectangle        rectangle;
+    struct sfce_editor_window   *window0;
+    struct sfce_editor_window   *window1;
+    enum sfce_split_kind         split_kind;
+    unsigned                     enable_line_numbering: 1;
+    unsigned                     enable_relative_line_numbering: 1;
+};
+
+struct editor {
+    struct sfce_editor_window  *active_window;
+    struct sfce_editor_window **windows;
+    uint32_t                    window_count;
+    uint32_t                    window_capacity;
 };
 
 int32_t round_multiple_of_two(int32_t value, int32_t multiple);
 int32_t newline_sequence_size(const char *buffer, int32_t buffer_size);
 int32_t buffer_newline_count(const char *buffer, int32_t buffer_size);
-const struct sfce_utf8_property *sfce_get_utf8_codepoint_property_unchecked(int32_t codepoint);
+const struct sfce_utf8_property *sfce_utf8_codepoint_property_unchecked(int32_t codepoint);
 int sfce_utf8_continuation(uint8_t byte);
 uint8_t sfce_encode_utf8_codepoint(int32_t codepoint, void *buffer);
 int32_t sfce_decode_utf8_codepoint(const void *buffer, int32_t byte_count);
 uint8_t sfce_codepoint_utf8_byte_count(int32_t codepoint);
 uint8_t sfce_codepoint_width(int32_t codepoint);
 int8_t sfce_codepoint_is_print(int32_t codepoint);
-enum sfce_keycode sfce_get_keypress();
-
 const char *make_character_printable(int32_t character);
 enum sfce_error_code sfce_get_console_screen_size(struct sfce_window_size *window_size);
 enum sfce_error_code sfce_write(const void *buffer, int32_t buffer_size);
-enum sfce_error_code sfce_write_zero_terminated(const char *buffer);
+enum sfce_error_code sfce_write_zero_terminated_string(const char *buffer);
 enum sfce_error_code sfce_enable_console_temp_buffer();
 enum sfce_error_code sfce_disable_console_temp_buffer();
+enum sfce_keycode sfce_get_keypress();
+
 enum sfce_error_code sfce_save_console_state(struct sfce_console_state *state);
-enum sfce_error_code sfce_restore_console_state(const struct sfce_console_state *state);
+enum sfce_error_code sfce_restore_console_state(struct sfce_console_state *state);
 enum sfce_error_code sfce_enable_virtual_terminal(const struct sfce_console_state *state);
 enum sfce_error_code sfce_setup_console(struct sfce_console_state *state);
 
@@ -375,8 +400,9 @@ enum sfce_error_code sfce_string_insert(struct sfce_string *string, int32_t inde
 enum sfce_error_code sfce_string_push_back_byte(struct sfce_string *string, uint8_t byte);
 enum sfce_error_code sfce_string_push_back_buffer(struct sfce_string *string, const void *buffer, int32_t buffer_size);
 enum sfce_error_code sfce_string_append_substring(struct sfce_string *string, struct sfce_string source_string, int32_t start_index, int32_t end_index);
-enum sfce_error_code sfce_string_load_file(struct sfce_string *string, const char *filepath);
-enum sfce_error_code sfce_string_append_formated_string(struct sfce_string *string, const void *format, ...);
+enum sfce_error_code sfce_string_printf(struct sfce_string *string, const void *format, ...);
+enum sfce_error_code sfce_string_nprintf(struct sfce_string *string, int32_t max_length, const void *format, ...);
+enum sfce_error_code sfce_string_vnprintf(struct sfce_string *string, int32_t max_length, const void *format, va_list va_args);
 enum sfce_error_code sfce_string_flush(struct sfce_string *string);
 void sfce_string_clear(struct sfce_string *string);
 int16_t sfce_string_compare(struct sfce_string string0, struct sfce_string string1);
@@ -457,12 +483,16 @@ enum sfce_error_code sfce_piece_tree_snapshot_set_piece_count(struct sfce_piece_
 enum sfce_error_code sfce_piece_tree_snapshot_add_piece(struct sfce_piece_tree_snapshot *snapshot, struct sfce_piece piece);
 
 void sfce_console_buffer_destroy(struct sfce_console_buffer *console);
+void sfce_console_buffer_clear(struct sfce_console_buffer *console);
 enum sfce_error_code sfce_console_buffer_create(struct sfce_console_buffer *console);
 enum sfce_error_code sfce_console_buffer_update(struct sfce_console_buffer *console);
-enum sfce_error_code sfce_console_buffer_printf(struct sfce_console_buffer *console, int32_t col, int32_t row, struct sfce_console_style style, const char *format, ...);
+// enum sfce_error_code sfce_console_buffer_nprintf(struct sfce_console_buffer *console, int32_t col, int32_t row, struct sfce_console_style style, int32_t max_length, const char *format, ...);
+enum sfce_error_code sfce_console_buffer_print_string(struct sfce_console_buffer *console, int32_t col, int32_t row, struct sfce_console_style style, const void *string, uint32_t length);
 enum sfce_error_code sfce_console_buffer_set_cell(struct sfce_console_buffer *console, int32_t col, int32_t row, struct sfce_console_cell cell);
 enum sfce_error_code sfce_console_buffer_flush(struct sfce_console_buffer *console);
 
+void sfce_editor_window_destroy(struct sfce_editor_window *window);
+enum sfce_error_code sfce_editor_window_display(struct sfce_editor_window *window, struct sfce_console_buffer *console, struct sfce_string *line_temp);
 
 static struct sfce_piece_node sentinel = {
     .parent = &sentinel,
@@ -472,6 +502,7 @@ static struct sfce_piece_node sentinel = {
 };
 
 static struct sfce_piece_node *sentinel_ptr = &sentinel;
+static struct sfce_console_cell blank_cell = { .codepoint = ' ' };
 
 static const struct sfce_utf8_property default_utf8_property = {
     SFCE_UNICODE_CATEGORY_CN, 0, SFCE_UNICODE_BIDI_CLASS_NONE, SFCE_UNICODE_DECOMPOSITION_NONE, -1, -1, -1, 1, 0, 0,
@@ -7832,99 +7863,9 @@ int32_t utf8_property_page_offsets[8704] = {
     12928, 12928, 12928, 37760,
 };
 
-void run_sfce_piece_tree_test()
-{
-    fprintf(stderr, "------------------------------------- PIECE TREE TEST BEGIN -------------------------------------\n");
-
-    struct sfce_piece_tree *tree = sfce_piece_tree_create();
-    sfce_piece_tree_insert_with_offset(tree, 0, "123", 3);
-    sfce_piece_tree_insert_with_offset(tree, 0, "abc", 3);
-
-    struct sfce_string tree_result_string = {};
-
-    sfce_string_resize(&tree_result_string, 0);
-    sfce_piece_tree_get_node_content(tree, tree->root, &tree_result_string);
-    
-    fprintf(stderr, "tree_result_string: '%.*s'\n", (int)tree_result_string.size, tree_result_string.data);
-    sfce_piece_node_print(tree, tree->root, 0);
-
-    sfce_piece_tree_erase_with_offset(tree, 0, 1);
-
-    sfce_string_resize(&tree_result_string, 0);
-    sfce_piece_tree_get_node_content(tree, tree->root, &tree_result_string);
-
-    fprintf(stderr, "tree_result_string: '%.*s'\n", (int)tree_result_string.size, tree_result_string.data);
-    sfce_piece_node_print(tree, tree->root, 0);
-
-    assert(strncmp(tree_result_string.data, "bc123", 5) == 0);
-
-    sfce_piece_tree_erase_with_offset(tree, 2, 2);
-
-    sfce_string_resize(&tree_result_string, 0);
-    sfce_piece_tree_get_node_content(tree, tree->root, &tree_result_string);
-
-    fprintf(stderr, "tree_result_string: '%.*s'\n", (int)tree_result_string.size, tree_result_string.data);
-
-    sfce_piece_node_print(tree, tree->root, 0);
-    assert(strncmp(tree_result_string.data, "bc3", 3) == 0);
-
-    sfce_piece_tree_destroy(tree);
-
-    fprintf(stderr, "------------------------------------- PIECE TREE TEST END -------------------------------------\n");
-}
-
-// int main(void) {
-//     // printf("\U0001f984");
-//     printf("😁👍🫢🤣😂\n");
-//     int codepoint = sfce_decode_utf8_codepoint("😁", 4);
-//     const struct sfce_utf8_property *p = sfce_get_utf8_codepoint_property_unchecked(codepoint);
-//     printf("p->category: %d\n",        p->category);
-//     printf("p->bidi_class: %d\n",      p->bidi_class);
-//     printf("p->combining_class: %d\n", p->combining_class);
-//     printf("p->width: %d\n",           p->width);
-//     return 0;
-// }
-
-int main_1(void)
-{
-    enum sfce_error_code error_code;
-    struct sfce_console_buffer console = {};
-    
-    if (sfce_console_buffer_create(&console) != SFCE_ERROR_OK) {
-        goto error;
-    }
-
-    if (sfce_console_buffer_update(&console) != SFCE_ERROR_OK) {
-        goto error;
-    }
-
-    error_code = sfce_console_buffer_flush(&console);
-
-    if (error_code != SFCE_ERROR_OK) {
-        goto error;
-    }
-
-    sfce_console_buffer_destroy(&console);
-
-    return 0;
-
-error:
-    fprintf(stderr, "ERROR_CODE: %d\n", error_code);
-    sfce_restore_console_state(&console.save_state);
-    return -1;
-}
-
 int main(int argc, const char *argv[])
 {
     enum sfce_error_code error_code;
-    const struct sfce_console_style style = {
-        .foreground = 0x00FFFFFF
-    };
-
-    const struct sfce_console_style line_number_style = {
-        // .foreground = 0x00FAD02C,
-        .foreground = 0x00525252,
-    };
 
     struct sfce_console_buffer console = {};
     error_code = sfce_console_buffer_create(&console);
@@ -7933,8 +7874,7 @@ int main(int argc, const char *argv[])
     }
 
     struct sfce_piece_tree *tree = sfce_piece_tree_create();
-
-    if (argc != 1) {
+    if (argc > 1) {
         error_code = sfce_piece_tree_load_file(tree, argv[1]);
         if (error_code != SFCE_ERROR_OK) {
             goto error;
@@ -7942,390 +7882,57 @@ int main(int argc, const char *argv[])
     }
 
     struct sfce_string line_contents = {};
-    for (int32_t idx = 0; idx < tree->line_count; ++idx) {
-        if (idx >= console.window_size.height) {
-            break;
-        }
 
-        error_code = sfce_piece_tree_get_line_content(tree, idx, &line_contents);
+    struct sfce_editor_window window = {
+        .rectangle.left = 0,
+        .rectangle.top = 0,
+        .rectangle.right = console.window_size.width - 1,
+        .rectangle.bottom = (console.window_size.height - 1) / 2,
+        .tree = tree,
+        .split_kind = SFCE_SPLIT_NONE,
+        .enable_line_numbering = 1,
+        // .enable_relative_line_numbering = 1,
+    };
 
-        if (error_code != SFCE_ERROR_OK) {
-            goto error;
-        }
+    sfce_console_buffer_clear(&console);
 
-        int32_t line_number = idx + 1;
-        int32_t digit_count = log10l(line_number) + 1;
-        int32_t line_padding_size = digit_count + SFCE_DEFAULT_TAB_SIZE - (digit_count % SFCE_DEFAULT_TAB_SIZE);
-
-        sfce_console_buffer_printf(&console, 0, idx, line_number_style, "%*d", line_padding_size, line_number);
-        sfce_console_buffer_printf(&console, line_padding_size + 1, idx, style, "%.*s", (int)line_contents.size, line_contents.data);
+    error_code = sfce_console_buffer_update(&console);
+    if (error_code != SFCE_ERROR_OK) {
+        goto error;
     }
 
-    sfce_string_destroy(&line_contents);
+
+    // const char *str = "// https://code.visualstudio.com/blogs/2018/03/23/text-buffer-reimplementation";
+
+    // static const struct sfce_console_style style = {
+    //     .foreground = 0x00FFFFFF,
+    // };
+
+    // sfce_console_buffer_print_string(&console, 0, 0, style, str, strlen(str));
+
+    error_code = sfce_editor_window_display(&window, &console, &line_contents);
+    if (error_code != SFCE_ERROR_OK) {
+        goto error;
+    }
 
     error_code = sfce_console_buffer_flush(&console);
     if (error_code != SFCE_ERROR_OK) {
         goto error;
     }
 
-    _getch();
-
-    sfce_console_buffer_destroy(&console);
-    sfce_piece_tree_destroy(tree);
-    return 0;
-
-error:
-    fprintf(stderr, "ERROR_CODE: %d\n", error_code);
-    sfce_console_buffer_destroy(&console);
-    sfce_piece_tree_destroy(tree);
-    return -1;
-}
-
-int _main(int argc, const char *argv[])
-{
-    if (argc == 1) {
-        printf("USAGE: sfce path/to/file");
-        return 0;
-    }
-
-    enum sfce_error_code error_code;
-    const struct sfce_console_style style = {
-        .foreground = 0x00FFFFFF
-    };
-
-    const struct sfce_console_style line_number_style = {
-        // .foreground = 0x00FAD02C,
-        .foreground = 0x00525252,
-    };
-
-    // fprintf(stderr, "sfce_piece_tree_load_file ran successfuly\n");
-
-    struct sfce_console_buffer console = {};
-    error_code = sfce_console_buffer_create(&console);
-    if (error_code != SFCE_ERROR_OK) {
-        goto error;
-    }
-
-    // fprintf(stderr, "sfce_console_buffer_create ran successfuly\n");
-
-    struct sfce_piece_tree *tree = sfce_piece_tree_create();
-
-    if (argc != 1) {
-        error_code = sfce_piece_tree_load_file(tree, argv[1]);
-        if (error_code != SFCE_ERROR_OK) {
-            goto error;
-        }
-    }
-
-    struct sfce_string line_contents = {};
-    for (int32_t idx = 0; idx < tree->line_count; ++idx) {
-        if (idx >= console.window_size.height) {
-            break;
-        }
-
-        
-        // fprintf(stderr, "getting line content ...\n");
-        error_code = sfce_piece_tree_get_line_content(tree, idx, &line_contents);
-        // fprintf(stderr, "sfce_piece_tree_get_line_content ran successfuly\n");
-
-        if (error_code != SFCE_ERROR_OK) {
-            goto error;
-        }
-
-        int32_t line_number = idx + 1;
-        int32_t digit_count = log10l(line_number) + 1;
-        // fprintf(stderr, "digit_count: %d\n", digit_count);
-        int32_t line_padding_size = digit_count + SFCE_DEFAULT_TAB_SIZE - (digit_count % SFCE_DEFAULT_TAB_SIZE);
-
-        sfce_console_buffer_printf(&console, 0, idx, line_number_style, "%*d", line_padding_size, line_number);
-        sfce_console_buffer_printf(&console, line_padding_size + 1, idx, style, "%.*s", (int)line_contents.size, line_contents.data);
-    }
-
     sfce_string_destroy(&line_contents);
-
-    // console.cells[0].codepoint = sfce_utf8_decode_codepoint("😁", 4);
-    // console.cells[0].style.foreground = 0x00FFFFFF;
-
-    // console.cells[5].codepoint = sfce_utf8_decode_codepoint("😁", 4);
-    // console.cells[5].style.foreground = 0x00FFFFFF;
-
-    // sfce_console_buffer_printf(&console, 0, 0, style, "😁    😁    😁\r\n😁    😁    😁\r😁    😁    😁\n😁    😁    😁\n😁😁😁\nxxxxxx");
-    // sfce_console_buffer_printf(&console, 0, 0, style, "😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁😁");
-    // sfce_console_buffer_printf(&console, 50, 0, style, "int main(void)\n{\n\tprintf(\"Hello, World\")\n\treturn 0;\n}");
-    // sfce_console_buffer_printf(&console, 0, 0, style, "int\n\tf");
     
-    error_code = sfce_console_buffer_flush(&console);
-    if (error_code != SFCE_ERROR_OK) {
-        goto error;
-    }
-
     _getch();
-
-    // for (int is_running = 1; is_running;) {
-    //     if (_kbhit()) {
-    //         int32_t keycode = _getch();
-
-    //         switch (keycode) {
-    //         case '\x1b':
-    //             if (!_kbhit()) {
-    //                 is_running = 0;
-    //                 break;
-    //             }
-
-    //             switch (_getch()) {
-    //                 case '[':
-    //                     switch (_getch())
-    //                     {
-    //                         case 'A': // UP
-    //                             break;
-    //                         case 'B': // DOWN
-    //                             break;
-    //                         case 'C':
-    //                             break;
-    //                         case 'D':
-    //                             break;
-    //                     }
-    //                     break;
-    //             }
-
-    //             break;
-    //         }
-    //     }
-
-    //     // if (sfce_console_buffer_update(&console) != SFCE_ERROR_OK) {
-    //     //     goto error;
-    //     // }
-
-    //     // if (sfce_console_buffer_flush(&console) != SFCE_ERROR_OK) {
-    //     //     goto error;
-    //     // }
-
-    //     // Sleep(1000);
-    // }
 
     sfce_restore_console_state(&console.save_state);
 
     printf("console.width: %d\n", console.window_size.width);
 
-    // for (int32_t idx = 0; idx < console.command_buffers[0].size; ++idx) {
-    //     char *buffer = make_character_printable(console.command_buffers[0].data[idx]);
-    //     sfce_write_string(buffer);
-    // }
-    // fprintf(stderr, "console.command_buffers[0]: '%.*s'\n", console.command_buffers[0].size, console.command_buffers[0].data);
-    // fprintf(stderr, "console.command_buffers[0].length: '%d'\n", console.command_buffers[0].size);
     return 0;
 
 error:
     fprintf(stderr, "ERROR_CODE: %d\n", error_code);
     sfce_restore_console_state(&console.save_state);
-    return -1;
-}
-
-int main1(void)
-{
-    // const char *string = "😊";
-    // const char *string = "\xC3\xBA";
-    const char *string = "🫢";
-    char buffer[8] = {0};
-
-    int32_t codepoint = sfce_decode_utf8_codepoint(string, strlen(string));
-    uint8_t characters_written = sfce_encode_utf8_codepoint(codepoint, buffer);
-
-    printf("string: \"%s\"\n", string);
-    printf("buffer: \"%s\"\n", buffer);
-    printf("characters_written: %d\n", characters_written);
-
-    printf("codepoint: U+%04X\n", codepoint);
-    return 0;
-}
-
-int main_(int argc, const char *argv[])
-{
-    run_sfce_piece_tree_test();
-
-    enum sfce_error_code error_code;
-
-#ifdef ENABLE_CONSOLE
-    struct sfce_console_state console_state = {};
-    error_code = sfce_setup_console(&console_state);
-    if (error_code != SFCE_ERROR_OK) {
-        fprintf(stderr, "error code: %d\n", error_code);
-        goto error;
-    }
-#endif // ENABLE_CONSOLE
-
-    struct sfce_string output_log = {};
-
-    struct sfce_string command_sequence = {};
-    struct sfce_string line_contents = {};
-    struct sfce_piece_tree *tree = sfce_piece_tree_create();
-    struct sfce_window_size window_size;
-
-    if (argc > 1) {
-        const char *filepath = argv[1];
-        error_code = sfce_piece_tree_load_file(tree, filepath);
-        if (error_code != SFCE_ERROR_OK) {
-            fprintf(stderr, "ERROR: unable to load file: '%s'\n", filepath);
-            goto error;
-        }
-    }
-
-    struct sfce_position cursor_position = {};
-
-    for (int is_running = 1; is_running;) {
-        // struct sfce_position cursor_position = sfce_piece_tree_position_at_offset(tree, cursor);
-
-        if (_kbhit()) {
-            int32_t keycode = _getch();
-
-            switch (keycode) {
-            case '\x7f':
-                // cursor = MAX(cursor - 1, 0);
-                // error_code = sfce_piece_tree_erase_with_offset(tree, cursor, 1);
-                // if (error_code != SFCE_ERROR_OK) {
-                //     fprintf(stderr, "ERROR: unable to erase character\n");
-                //     goto error;
-                // }
-                break;
-            case '\x1b':
-                if (!_kbhit()) {
-                    is_running = 0;
-                    break;
-                }
-
-                switch (_getch()) {
-                    case '[':
-                        switch (_getch())
-                        {
-                            case 'A': // UP
-                                break;
-                            case 'B': // DOWN
-                                break;
-                            case 'C': {
-
-                                // int32_t codepoint = sfce_piece_tree_codepoint_at_offset(tree, cursor);
-                                // struct sfce_node_position position = sfce_piece_tree_node_at_offset(tree, cursor);
-                                // int32_t codepoint = sfce_piece_tree_codepoint_at_node_position(tree, position);
-                                // int32_t byte_count = sfce_codepoint_utf8_byte_count(codepoint);
-                                // cursor = MIN(cursor + byte_count, tree->length);
-                                // while (sfce_piece_tree_get_character_at_offset())
-                                break;
-                            }
-                            case 'D':
-                                // cursor = MAX(cursor - 1, 0);
-                                break;
-                        }
-                        break;
-                }
-
-                break;
-            case '\r':
-                // error_code = sfce_piece_tree_insert_with_offset(tree, cursor, "\r\n", 2);
-                // cursor += 2;
-                // if (error_code != SFCE_ERROR_OK) {
-                //     fprintf(stderr, "ERROR: unable to insert character\n");
-                //     goto error;
-                // }
-                break;
-            case CTRL('C'):
-                break;
-            case CTRL('V'):
-                break;
-            default:
-                // sfce_string_append_formated_string(&output_log, "keycode: 0x%02X\n", keycode);
-                if (isprint(keycode) || isspace(keycode) || keycode == '\n' || keycode == '\r') {
-                    // error_code = sfce_piece_tree_insert_with_offset(tree, cursor++, (char[]){ keycode }, 1);
-                    if (error_code != SFCE_ERROR_OK) {
-                        fprintf(stderr, "ERROR: unable to insert character\n");
-                        goto error;
-                    }
-                }
-                break;
-            }
-        }
-
-#ifdef ENABLE_CONSOLE
-        error_code = sfce_get_console_screen_size(&window_size);
-        if (error_code != SFCE_ERROR_OK) {
-            continue;
-        }
-
-        sfce_string_clear(&command_sequence);
-        // sfce_string_append_formated_string(&command_sequence, "\x1b[2J");
-        sfce_string_append_formated_string(&command_sequence, "\x1b[0;0H");
-
-        for (int32_t row = 0; row < window_size.height; ++row) {
-            if (row >= tree->line_count) {
-                sfce_string_append_formated_string(&command_sequence, "\x1b[%d;0H\x1b[2K", (int)row + 1);
-                continue;
-            }
-
-            error_code = sfce_piece_tree_get_line_content(tree, row, &line_contents);
-            if (error_code != SFCE_ERROR_OK) {
-                continue;
-            }
-
-            int32_t new_size = 0;
-            for (; new_size < line_contents.size; ++new_size) {
-                int32_t newline_size = newline_sequence_size(&line_contents.data[new_size], line_contents.size - new_size);
-
-                if (newline_size != 0) {
-                    break;
-                }
-            }
-
-            sfce_string_resize(&line_contents, new_size);
-
-            sfce_string_append_formated_string(&command_sequence, "\x1b[%d;0H%-8d\x1b[K", (int)row + 1, (int)row + 1);
-
-            for (int32_t idx = 0; idx < line_contents.size; ++idx) {
-                const char *printable = make_character_printable(line_contents.data[idx]);
-
-                if (idx == cursor_position.col && cursor_position.row == row) {
-                    sfce_string_append_formated_string(&command_sequence, "\x1b[4m");
-                    sfce_string_append_formated_string(&command_sequence, printable);
-                    sfce_string_append_formated_string(&command_sequence, "\x1b[0m");
-                }
-                else {
-                    sfce_string_append_formated_string(&command_sequence, printable);
-                }
-            }
-        }
-
-        sfce_string_append_formated_string(&command_sequence, "\x1b[%d;%dH\x1b[48;2;255;255;255m \x1b[0m", cursor_position.row + 1, cursor_position.col + 9);
-        // sfce_string_append_formated_string(&command_sequence, "\x1b[%d;%d\x1b[4m_\x1b[0m", cursor_position.row, cursor_position.col);
-        // sfce_string_append_formated_string(&command_sequence, "\x1b[%d;0Hrow: %d, col: %d, offset: %d\x1b[K", window_size.height - 3, cursor_position.row, cursor_position.col, cursor);
-        sfce_string_append_formated_string(&command_sequence, "\x1b[%d;0Htree->line_count: %d\x1b[K", window_size.height - 2, tree->line_count);
-        sfce_string_append_formated_string(&command_sequence, "\x1b[%d;0Htree->length: %d\x1b[K", window_size.height - 1, tree->length);
-        // sfce_string_append_formated_string(&command_sequence, "\x1b[?25l");
-
-        sfce_string_flush(&command_sequence);
-#endif // ENABLE_CONSOLE
-    }
-
-#ifdef ENABLE_CONSOLE
-    sfce_restore_console_state(&console_state);
-#endif // ENABLE_CONSOLE
-    sfce_string_destroy(&command_sequence);
-    sfce_string_destroy(&line_contents);
-
-    fprintf(stderr, "================================ TREE OUTPUT ================================\n");
-    sfce_piece_node_print(tree, tree->root, 0);
-    fprintf(stderr, "================================ TREE OUTPUT ================================\n");
-
-    sfce_write(output_log.data, output_log.size);
-    sfce_string_destroy(&output_log);
-
-    sfce_piece_tree_destroy(tree);
-    return 0;
-
-error:
-#ifdef ENABLE_CONSOLE
-    sfce_restore_console_state(&console_state);
-#endif // ENABLE_CONSOLE
-
-    sfce_piece_tree_destroy(tree);
-    fprintf(stderr, "ERROR_CODE: %d\n", error_code);
     return -1;
 }
 
@@ -8334,6 +7941,11 @@ int32_t round_multiple_of_two(int32_t value, int32_t multiple)
     return (value + multiple - 1) & -multiple;
 }
 
+// 
+// TODO: Fix newline scanning withing the piece tree where
+// the piece tree accept multiple different newline types
+// within a single file.
+// 
 int32_t newline_sequence_size(const char *buffer, int32_t buffer_size)
 {
     if (buffer_size > 0) {
@@ -8359,7 +7971,7 @@ enum sfce_error_code sfce_write(const void *buffer, int32_t buffer_size)
     return SFCE_ERROR_OK;
 }
 
-enum sfce_error_code sfce_write_zero_terminated(const char *buffer)
+enum sfce_error_code sfce_write_zero_terminated_string(const char *buffer)
 {
     return sfce_write(buffer, strlen(buffer));
 }
@@ -8384,20 +7996,20 @@ int32_t buffer_newline_count(const char *buffer, int32_t buffer_size)
     return newline_count;
 }
 
-const struct sfce_utf8_property *sfce_get_utf8_codepoint_property_unchecked(int32_t codepoint)
+const struct sfce_utf8_property *sfce_utf8_codepoint_property_unchecked(int32_t codepoint)
 {
     uint32_t page_index = utf8_property_page_offsets[codepoint >> 7];
     uint32_t index = utf8_property_indices[page_index + (codepoint & 0x7F)];
     return &utf8_properties[index];
 }
 
-const struct sfce_utf8_property *sfce_get_utf8_codepoint_property(int32_t codepoint)
+const struct sfce_utf8_property *sfce_utf8_codepoint_property(int32_t codepoint)
 {
     if (codepoint > 0x10FFFF || codepoint < 0x000000) {
         return &default_utf8_property;
     }
 
-    return sfce_get_utf8_codepoint_property_unchecked(codepoint);
+    return sfce_utf8_codepoint_property_unchecked(codepoint);
 }
 
 int sfce_utf8_continuation(uint8_t byte)
@@ -8501,18 +8113,12 @@ uint8_t sfce_codepoint_utf8_byte_count(int32_t codepoint)
 
 uint8_t sfce_codepoint_width(int32_t codepoint)
 {
-    // 
-    // TODO: Implement this function
-    // 
-    return sfce_get_utf8_codepoint_property(codepoint)->width;
+    return sfce_utf8_codepoint_property(codepoint)->width;
 }
 
 int8_t sfce_codepoint_is_print(int32_t codepoint)
 {
-    // 
-    // TODO: Implement this function
-    // 
-    enum sfce_unicode_category category = sfce_get_utf8_codepoint_property(codepoint)->category;
+    enum sfce_unicode_category category = sfce_utf8_codepoint_property(codepoint)->category;
 
     switch (category) {
     case SFCE_UNICODE_CATEGORY_LL:
@@ -8605,13 +8211,23 @@ enum sfce_error_code sfce_save_console_state(struct sfce_console_state *state)
         return SFCE_ERROR_FAILED_WIN32_API_CALL;
     }
 
+    state->console_screen_buffer_info.cbSize = sizeof state->console_screen_buffer_info;
+    if (!GetConsoleScreenBufferInfoEx(state->output_handle, &state->console_screen_buffer_info)) {
+        return SFCE_ERROR_FAILED_WIN32_API_CALL;
+    }
+
+    state->console_font_info.cbSize = sizeof state->console_font_info;
+    if (!GetCurrentConsoleFontEx(state->output_handle, FALSE, &state->console_font_info)) {
+        return SFCE_ERROR_FAILED_WIN32_API_CALL;
+    }
+
     state->input_code_page = GetConsoleCP();
     state->output_code_page = GetConsoleOutputCP();
 
     return SFCE_ERROR_OK;
 }
 
-enum sfce_error_code sfce_restore_console_state(const struct sfce_console_state *state)
+enum sfce_error_code sfce_restore_console_state(struct sfce_console_state *state)
 {
     enum sfce_error_code error_code = sfce_disable_console_temp_buffer();
 
@@ -8624,6 +8240,15 @@ enum sfce_error_code sfce_restore_console_state(const struct sfce_console_state 
     }
 
     if (!SetConsoleMode(state->input_handle, state->input_mode)) {
+        return SFCE_ERROR_FAILED_WIN32_API_CALL;
+    }
+
+    state->console_screen_buffer_info.srWindow.Bottom += 1;
+    if (!SetConsoleScreenBufferInfoEx(state->output_handle, (void *)&state->console_screen_buffer_info)) {
+        return SFCE_ERROR_FAILED_WIN32_API_CALL;
+    }
+
+    if (!SetCurrentConsoleFontEx(state->output_handle, FALSE, (void*)&state->console_font_info)) {
         return SFCE_ERROR_FAILED_WIN32_API_CALL;
     }
 
@@ -8663,7 +8288,7 @@ enum sfce_error_code sfce_enable_virtual_terminal(const struct sfce_console_stat
 
 enum sfce_error_code sfce_get_console_screen_size(struct sfce_window_size *window_size)
 {
-    enum sfce_error_code error_code = sfce_write_zero_terminated("\x1b[s\x1b[32767;32767H");
+    enum sfce_error_code error_code = sfce_write_zero_terminated_string("\x1b[s\x1b[32767;32767H");
     if (error_code != SFCE_ERROR_OK) {
         return error_code;
     }
@@ -8682,7 +8307,7 @@ enum sfce_error_code sfce_get_console_screen_size(struct sfce_window_size *windo
     window_size->height = 0;
 #endif
 
-    error_code = sfce_write_zero_terminated("\x1b[u");
+    error_code = sfce_write_zero_terminated_string("\x1b[u");
     if (error_code != SFCE_ERROR_OK) {
         return error_code;
     }
@@ -8758,7 +8383,6 @@ enum sfce_error_code sfce_string_resize(struct sfce_string *result, int32_t size
 {
     if (size >= result->capacity) {
         int32_t new_capacity = round_multiple_of_two(size, SFCE_STRING_ALLOCATION_SIZE);
-
         enum sfce_error_code error_code = sfce_string_reserve(result, new_capacity);
         if (error_code != SFCE_ERROR_OK) {
             return error_code;
@@ -8829,40 +8453,7 @@ enum sfce_error_code sfce_string_append_substring(struct sfce_string *string, st
     return sfce_string_push_back_buffer(string, &source_string.data[start_index], end_index - start_index);
 }
 
-enum sfce_error_code sfce_string_load_file(struct sfce_string *string, const char *filepath)
-{
-    FILE *fp = fopen(filepath, "rb");
-    if (fp == NULL) {
-        return SFCE_ERROR_UNABLE_TO_OPEN_FILE;
-    }
-
-    struct sfce_string result = {};
-    int32_t total_file_size = 0;
-    for (int32_t current_chunk_size = SFCE_FILE_READ_CHUNK_SIZE; current_chunk_size >= SFCE_FILE_READ_CHUNK_SIZE;) {
-        int32_t read_offset = result.size;
-
-        enum sfce_error_code error_code = sfce_string_resize(&result, result.size + SFCE_FILE_READ_CHUNK_SIZE);
-        if (error_code != SFCE_ERROR_OK) {
-            *string = (struct sfce_string){};
-            return error_code;
-        }
-
-        current_chunk_size = fread(result.data + read_offset, 1, SFCE_FILE_READ_CHUNK_SIZE, fp);
-        total_file_size += current_chunk_size;
-    }
-
-    enum sfce_error_code error_code = sfce_string_resize(&result, total_file_size);
-    if (error_code != SFCE_ERROR_OK) {
-        *string = (struct sfce_string){};
-        return error_code;
-    }
-
-    *string = result;
-    fclose(fp);
-    return SFCE_ERROR_OK;
-}
-
-enum sfce_error_code sfce_string_append_formated_string(struct sfce_string *string, const void *format, ...)
+enum sfce_error_code sfce_string_printf(struct sfce_string *string, const void *format, ...)
 {
     enum { TEMP_BUFFER_SIZE = 4096 };
 
@@ -8882,6 +8473,43 @@ enum sfce_error_code sfce_string_append_formated_string(struct sfce_string *stri
         return error_code;
     }
 
+    return SFCE_ERROR_OK;
+}
+
+enum sfce_error_code sfce_string_nprintf(struct sfce_string *string, int32_t max_length, const void *format, ...)
+{
+    va_list va_args;
+    va_start(va_args, format);
+    enum sfce_error_code error_code = sfce_string_vnprintf(string, max_length, format, va_args);
+    va_end(va_args);
+
+    return error_code;
+}
+
+enum sfce_error_code sfce_string_vnprintf(struct sfce_string *string, int32_t max_length, const void *format, va_list va_args)
+{
+    enum sfce_error_code error_code;
+
+    int formatted_string_size = vsnprintf(NULL, 0, format, va_args);
+    if (formatted_string_size < 0) {
+        return SFCE_ERROR_BUFFER_OVERFLOW;
+    }
+
+    int32_t write_location = string->size;
+    int32_t size_to_allocate = formatted_string_size > max_length ? max_length : formatted_string_size;
+    
+    error_code = sfce_string_resize(string, string->size + size_to_allocate + 1);
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
+    }
+    
+    formatted_string_size = vsnprintf(&string->data[write_location], string->size - write_location, format, va_args);
+    if (formatted_string_size < 0) {
+        return SFCE_ERROR_BUFFER_OVERFLOW;
+    }
+
+    // Remove the null terminating character
+    string->size = string->size - 1;
     return SFCE_ERROR_OK;
 }
 
@@ -9589,15 +9217,15 @@ void sfce_piece_node_print(struct sfce_piece_tree *tree, struct sfce_piece_node 
         sfce_write(" ", 1);
     }
 
-    sfce_write_zero_terminated(node_color_list[node->color]);
+    sfce_write_zero_terminated_string(node_color_list[node->color]);
 
     for (int32_t idx = 0; idx < piece_content.size; ++idx) {
         int32_t character = piece_content.data[idx];
         const char *buffer = make_character_printable(character);
-        sfce_write_zero_terminated(buffer);
+        sfce_write_zero_terminated_string(buffer);
     }
 
-    sfce_write_zero_terminated("'\n");
+    sfce_write_zero_terminated_string("'\n");
 
     sfce_piece_node_print(tree, node->left, space + COUNT);
 }
@@ -9662,6 +9290,8 @@ struct sfce_piece_tree *sfce_piece_tree_create()
     if (tree != NULL) {
         *tree = (struct sfce_piece_tree) {
             .root = sentinel_ptr,
+            .length = 0,
+            .line_count = 1,
         };
 
         enum sfce_error_code error_code = sfce_piece_tree_add_new_string_buffer(tree);
@@ -10094,15 +9724,14 @@ enum sfce_error_code sfce_piece_tree_create_node_subtree(struct sfce_piece_tree 
         struct sfce_piece piece;
         error_code = sfce_piece_tree_create_piece(tree, buffer, chunk_size, &piece);
         if (error_code != SFCE_ERROR_OK) {
-            sfce_piece_node_destroy(root);
-            return error_code;
+            goto error;
         }
 
         struct sfce_piece_node *new_node = sfce_piece_node_create(piece);
         
         if (new_node == NULL) {
-            sfce_piece_node_destroy(root);
-            return SFCE_ERROR_OUT_OF_MEMORY;
+            error_code = SFCE_ERROR_OUT_OF_MEMORY;
+            goto error;
         }
 
         sfce_piece_node_insert_right(&root, rightmost_node, new_node);
@@ -10112,6 +9741,10 @@ enum sfce_error_code sfce_piece_tree_create_node_subtree(struct sfce_piece_tree 
 
     *result = root;
     return SFCE_ERROR_OK;
+
+error:
+    sfce_piece_node_destroy(root);
+    return error_code;
 }
 
 enum sfce_error_code sfce_piece_tree_create_piece(struct sfce_piece_tree *tree, const char *data, int32_t byte_count, struct sfce_piece *result_piece)
@@ -10342,7 +9975,7 @@ enum sfce_error_code sfce_piece_tree_load_file(struct sfce_piece_tree *tree, con
         return SFCE_ERROR_UNABLE_TO_OPEN_FILE;
     }
 
-    char buffer[SFCE_STRING_BUFFER_SIZE_THRESHOLD] = {};
+    char buffer[SFCE_STRING_BUFFER_SIZE_THRESHOLD << 1] = {};
     int32_t chunk_size = 0;
 
     enum sfce_error_code error_code;
@@ -10445,6 +10078,15 @@ void sfce_console_buffer_destroy(struct sfce_console_buffer *console)
     sfce_restore_console_state(&console->save_state);
 }
 
+void sfce_console_buffer_clear(struct sfce_console_buffer *console)
+{
+    const int32_t cell_count = console->window_size.width * console->window_size.height;
+
+    for (int32_t idx = 0; idx < cell_count; ++idx) {
+        console->cells[idx] = blank_cell;
+    }
+}
+
 enum sfce_error_code sfce_console_buffer_create(struct sfce_console_buffer *console)
 {
     if (console == NULL) {
@@ -10516,27 +10158,27 @@ enum sfce_error_code sfce_console_buffer_update(struct sfce_console_buffer *cons
     return SFCE_ERROR_OK;
 }
 
-enum sfce_error_code sfce_console_buffer_printf(struct sfce_console_buffer *console, int32_t col, int32_t row, struct sfce_console_style style, const char *format, ...)
+// enum sfce_error_code sfce_console_buffer_nprintf(struct sfce_console_buffer *console, int32_t col, int32_t row, struct sfce_console_style style, int32_t max_length, const char *format, ...)
+// {
+//     va_list va_args;
+//     va_start(va_args, format);
+
+//     sfce_string_clear(&console->printf_temp);
+//     enum sfce_error_code error_code = sfce_string_vnprintf(&console->printf_temp, max_length, format, va_args);
+
+//     va_end(va_args);
+
+//     if (error_code != SFCE_ERROR_OK) {
+//         return error_code;
+//     }
+
+//     return sfce_console_buffer_print_string(console, col, row, style, console->printf_temp.data, console->printf_temp.size);
+// }
+
+enum sfce_error_code sfce_console_buffer_print_string(struct sfce_console_buffer *console, int32_t col, int32_t row, struct sfce_console_style style, const void *string, uint32_t length)
 {
-    enum { TEMP_BUFFER_SIZE = 0x1000 };
-
-    static struct sfce_console_cell blank_cell = { .codepoint = ' ' };
-    static char temp_buffer[TEMP_BUFFER_SIZE] = {0};
-
-    va_list va_args;
-    va_start(va_args, format);
-
-    int temp_buffer_size = vsnprintf(temp_buffer, TEMP_BUFFER_SIZE, format, va_args);
-    if (temp_buffer_size < 0) {
-        return SFCE_ERROR_BUFFER_OVERFLOW;
-    }
-
-    // fprintf(stderr, "Preparing a formatted string to print to the console.\n");
-
-    va_end(va_args);
-
-    char *iter = temp_buffer;
-    char *end  = temp_buffer + temp_buffer_size;
+    const char *iter = string;
+    const char *end  = iter + length;
     struct sfce_position position = { .col = col, .row = row };
 
     enum sfce_error_code error_code;
@@ -10552,6 +10194,7 @@ enum sfce_error_code sfce_console_buffer_printf(struct sfce_console_buffer *cons
             position.col = col;
         }
         else if (codepoint == '\t') {
+            struct sfce_console_cell blank_cell = { .codepoint = ' ', .style = style };
             const int32_t distance_from_edge = position.col - col;
             const int32_t tab_width = console->tab_size - (distance_from_edge % console->tab_size);
 
@@ -10566,6 +10209,10 @@ enum sfce_error_code sfce_console_buffer_printf(struct sfce_console_buffer *cons
             iter += codepoint_byte_count;
         }
         else {
+            if (!sfce_codepoint_is_print(codepoint)) {
+                codepoint = ' ';
+            }
+
             struct sfce_console_cell cell = {
                 .codepoint = codepoint,
                 .style = style,
@@ -10580,8 +10227,6 @@ enum sfce_error_code sfce_console_buffer_printf(struct sfce_console_buffer *cons
             position.col += 1;
         }
     }
-    
-    // fprintf(stderr, "Printed the formatted string to the console.\n");
     
     return SFCE_ERROR_OK;
 }
@@ -10606,7 +10251,7 @@ enum sfce_error_code sfce_console_buffer_flush(struct sfce_console_buffer *conso
 
     sfce_string_clear(&console->command);
 
-    error_code = sfce_string_append_formated_string(&console->command, "\x1b[0m");
+    error_code = sfce_string_nprintf(&console->command, INT32_MAX, "\x1b[0m");
     if (error_code != SFCE_ERROR_OK) {
         return error_code;
     }
@@ -10614,7 +10259,7 @@ enum sfce_error_code sfce_console_buffer_flush(struct sfce_console_buffer *conso
     uint8_t buffer[4] = {};
     struct sfce_console_cell current = {}, previous = {};
     for (int32_t idx = 0, row = 0; row < console->window_size.height; ++row) {
-        error_code = sfce_string_append_formated_string(&console->command, "\x1b[%d;0H\x1b[2K", row + 1);
+        error_code = sfce_string_nprintf(&console->command, INT32_MAX, "\x1b[%d;0H\x1b[2K", row + 1);
         if (error_code != SFCE_ERROR_OK) {
             return error_code;
         }
@@ -10626,7 +10271,7 @@ enum sfce_error_code sfce_console_buffer_flush(struct sfce_console_buffer *conso
                 int32_t red   = (console->cells[idx].style.foreground >> 16) & 0xFF;
                 int32_t green = (console->cells[idx].style.foreground >>  8) & 0xFF;
                 int32_t blue  = (console->cells[idx].style.foreground >>  0) & 0xFF;
-                error_code = sfce_string_append_formated_string(&console->command, "\x1b[38;2;%d;%d;%dm", red, green, blue);
+                error_code = sfce_string_nprintf(&console->command, INT32_MAX, "\x1b[38;2;%d;%d;%dm", red, green, blue);
                 if (error_code != SFCE_ERROR_OK) {
                     return error_code;
                 }
@@ -10636,14 +10281,14 @@ enum sfce_error_code sfce_console_buffer_flush(struct sfce_console_buffer *conso
                 int32_t red   = (console->cells[idx].style.background >> 16) & 0xFF;
                 int32_t green = (console->cells[idx].style.background >>  8) & 0xFF;
                 int32_t blue  = (console->cells[idx].style.background >>  0) & 0xFF;
-                error_code = sfce_string_append_formated_string(&console->command, "\x1b[48;2;%d;%d;%dm", red, green, blue);
+                error_code = sfce_string_nprintf(&console->command, INT32_MAX, "\x1b[48;2;%d;%d;%dm", red, green, blue);
                 if (error_code != SFCE_ERROR_OK) {
                     return error_code;
                 }
             }
 
             if (current.style.attributes != previous.style.attributes) {
-                error_code = sfce_string_append_formated_string(&console->command, "\x1b[%dm", current.style.attributes);
+                error_code = sfce_string_nprintf(&console->command, INT32_MAX, "\x1b[%dm", current.style.attributes);
                 if (error_code != SFCE_ERROR_OK) {
                     return error_code;
                 }
@@ -10680,4 +10325,80 @@ enum sfce_error_code sfce_console_buffer_flush(struct sfce_console_buffer *conso
     }
 
     return SFCE_ERROR_OK;
+}
+
+void sfce_editor_window_destroy(struct sfce_editor_window *window)
+{
+    if (window != NULL) {
+        if (window->cursors != NULL) {
+            free(window->cursors);
+        }
+
+        sfce_piece_tree_destroy(window->tree);
+
+        sfce_editor_window_destroy(window->window0);
+        sfce_editor_window_destroy(window->window1);
+    }
+}
+
+enum sfce_error_code sfce_editor_window_display(struct sfce_editor_window *window, struct sfce_console_buffer *console, struct sfce_string *line_temp)
+{
+    enum sfce_error_code error_code;
+    static const struct sfce_console_style style = {
+        .foreground = 0x00FFFFFF,
+    };
+
+    static const struct sfce_console_style line_number_style = {
+        .foreground = 0x00525252,
+    };
+
+    static const struct sfce_console_style status_style = {
+        .foreground = 0x00FFFFFF,
+        .background = 0x00525252,
+    };
+
+    struct sfce_string *print_string = &(struct sfce_string) {};
+
+    int32_t window_width = window->rectangle.right - window->rectangle.left + 1;
+
+    sfce_string_clear(line_temp);
+    for (int32_t row = window->rectangle.top, line_index = 0; row <= window->rectangle.bottom; ++row, ++line_index) {
+        error_code = sfce_piece_tree_get_line_content(window->tree, line_index, line_temp);
+        if (error_code != SFCE_ERROR_OK) {
+            return error_code;
+        }
+
+        int32_t line_padding_size = 0;
+        if (window->enable_line_numbering) {
+            int32_t line_number = line_index + 1;
+            if (window->enable_relative_line_numbering && window->cursor_count >= 1) {
+                line_number = line_index - window->cursors[0].mark.row;
+                line_number = line_number > 0 ? line_number : -line_number;
+            }
+
+            int32_t digit_count = log10l(line_number) + 1;
+            line_padding_size = digit_count + SFCE_DEFAULT_TAB_SIZE - (digit_count % SFCE_DEFAULT_TAB_SIZE);
+
+            if (line_index >= window->tree->line_count) {
+                struct sfce_console_cell cell = { '~', line_number_style };
+                sfce_console_buffer_set_cell(console, window->rectangle.left, row, cell);
+            }
+            else {
+                sfce_string_clear(print_string);
+                sfce_string_nprintf(print_string, window_width, "%*d", line_padding_size, line_number);
+                sfce_console_buffer_print_string(console, window->rectangle.left, row, line_number_style, print_string->data, print_string->size);
+            }
+        }
+
+        int32_t line_contents_start = line_padding_size + window->enable_line_numbering;
+        sfce_console_buffer_print_string(console, line_contents_start, row, style, line_temp->data, line_temp->size);
+    }
+
+    const char *filepath = window->filepath == NULL ? "[Untitled File]" : window->filepath;
+
+    sfce_string_clear(print_string);
+    sfce_string_nprintf(print_string, window_width, "%s", filepath);
+    sfce_console_buffer_print_string(console, window->rectangle.left, window->rectangle.bottom, status_style, print_string->data, print_string->size);
+
+    return 0;
 }
