@@ -4,12 +4,18 @@
 // https://www.unicode.org/Public/16.0.0/ucd/
 // https://www.unicode.org/reports/tr44/#Canonical_Combining_Class_Values
 // https://www.compart.com/en/unicode
+// https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+// https://en.wikipedia.org/wiki/ANSI_escape_code#Terminal_input_sequences
+// https://vt100.net/docs/vt100-ug/contents.html
+// https://vt100.net/emu/dec_ansi_parser
+// https://en.wikipedia.org/wiki/ANSI_escape_code#Fe_Escape_sequences
+// https://vt100.net/annarbor/aaa-ug/section13.html#:~:text=These%20Standards%20define%20a%20set,(ASCII)%20and%20ANSI%20X3.
 // gcc main.c -O3 -Werror -Wfatal-errors -Wall -o bin/sfce
 
 #if defined(_WIN32) || defined(_WIN64) || defined(__CYGWIN__)
 #   define SFCE_PLATFORM_WINDOWS
 #elif defined(__linux__) || defined(__linux) || defined(linux)
-#   define SFCE_PLATFORM_LINUX
+#   define SFCE_PLATFORM_LINUXa
 #elif defined(__APPLE__) || defined(__MACH__)
 #   define SFCE_PLATFORM_APPLE
 #elif defined(__FreeBSD__)
@@ -42,7 +48,7 @@ enum {
 
     SFCE_FILE_READ_CHUNK_SIZE = 1024,
     SFCE_STRING_BUFFER_SIZE_THRESHOLD = 0xFFFF,
-    
+
     //
     // ALL ALLOCATION SIZES MUST BE
     // A POWER OF TWO.
@@ -72,8 +78,81 @@ enum sfce_error_code {
     SFCE_ERROR_UNIMPLEMENTED,
 };
 
+enum sfce_modifier {
+    SFCE_MODIFIER_NONE  = 0x00,
+    SFCE_MODIFIER_SHIFT = 0x01,
+    SFCE_MODIFIER_ALT   = 0x02,
+    SFCE_MODIFIER_CTRL  = 0x04,
+    SFCE_MODIFIER_META  = 0x08,
+};
+
 enum sfce_keycode {
-    SFCE_KEYCODE_COUNT,
+    SFCE_KEYCODE_A = 'A',
+    SFCE_KEYCODE_B = 'B',
+    SFCE_KEYCODE_C = 'C',
+    SFCE_KEYCODE_D = 'D',
+    SFCE_KEYCODE_E = 'E',
+    SFCE_KEYCODE_F = 'F',
+    SFCE_KEYCODE_G = 'G',
+    SFCE_KEYCODE_H = 'H',
+    SFCE_KEYCODE_I = 'I',
+    SFCE_KEYCODE_J = 'J',
+    SFCE_KEYCODE_K = 'K',
+    SFCE_KEYCODE_L = 'L',
+    SFCE_KEYCODE_M = 'M',
+    SFCE_KEYCODE_N = 'N',
+    SFCE_KEYCODE_O = 'O',
+    SFCE_KEYCODE_P = 'P',
+    SFCE_KEYCODE_Q = 'Q',
+    SFCE_KEYCODE_R = 'R',
+    SFCE_KEYCODE_S = 'S',
+    SFCE_KEYCODE_T = 'T',
+    SFCE_KEYCODE_U = 'U',
+    SFCE_KEYCODE_V = 'V',
+    SFCE_KEYCODE_W = 'W',
+    SFCE_KEYCODE_X = 'X',
+    SFCE_KEYCODE_Y = 'Y',
+    SFCE_KEYCODE_Z = 'Z',
+    SFCE_KEYCODE_0 = '0',
+    SFCE_KEYCODE_1 = '1',
+    SFCE_KEYCODE_2 = '2',
+    SFCE_KEYCODE_3 = '3',
+    SFCE_KEYCODE_4 = '4',
+    SFCE_KEYCODE_5 = '5',
+    SFCE_KEYCODE_6 = '6',
+    SFCE_KEYCODE_7 = '7',
+    SFCE_KEYCODE_8 = '8',
+    SFCE_KEYCODE_9 = '9',
+    
+    SFCE_KEYCODE_TAB = '\x09',
+    SFCE_KEYCODE_ENTER = '\x0D',
+    SFCE_KEYCODE_ERASE = '\x7F',
+    SFCE_KEYCODE_ESCAPE = '\x1B',
+
+    SFCE_KEYCODE_NO_KEY_PRESS = 0x1FFFF,
+    SFCE_KEYCODE_ARROW_LEFT,
+    SFCE_KEYCODE_ARROW_RIGHT,
+    SFCE_KEYCODE_ARROW_UP,
+    SFCE_KEYCODE_ARROW_DOWN,
+    SFCE_KEYCODE_END,
+    SFCE_KEYCODE_HOME,
+    SFCE_KEYCODE_PAGE_UP,
+    SFCE_KEYCODE_PAGE_DOWN,
+    SFCE_KEYCODE_DELETE,
+    SFCE_KEYCODE_INSERT,
+    SFCE_KEYCODE_NUMPAD_5,
+    SFCE_KEYCODE_F1,
+    SFCE_KEYCODE_F2,
+    SFCE_KEYCODE_F3,
+    SFCE_KEYCODE_F4,
+    SFCE_KEYCODE_F5,
+    SFCE_KEYCODE_F6,
+    SFCE_KEYCODE_F7,
+    SFCE_KEYCODE_F8,
+    SFCE_KEYCODE_F9,
+    SFCE_KEYCODE_F10,
+    SFCE_KEYCODE_F11,
+    SFCE_KEYCODE_F12,
 };
 
 enum sfce_red_black_color {
@@ -81,12 +160,12 @@ enum sfce_red_black_color {
     SFCE_COLOR_RED   = 1,
 };
 
-// enum sfce_newline_type {
-//     SFCE_NEWLINE_TYPE_NONE,
-//     SFCE_NEWLINE_TYPE_CRLF,
-//     SFCE_NEWLINE_TYPE_CR,
-//     SFCE_NEWLINE_TYPE_LF,
-// };
+enum sfce_newline_type {
+    SFCE_NEWLINE_TYPE_NONE,
+    SFCE_NEWLINE_TYPE_CRLF,
+    SFCE_NEWLINE_TYPE_CR,
+    SFCE_NEWLINE_TYPE_LF,
+};
 
 enum sfce_console_attribute {
     SFCE_CONSOLE_ATTRIBUTE_NONE = 0, // reset all modes (styles and colors)
@@ -193,11 +272,6 @@ struct sfce_window_size {
     int32_t width;
     int32_t height;
 };
-
-// struct sfce_point {
-//     int32_t x;
-//     int32_t y;
-// };
 
 struct sfce_string {
     char   *data;
@@ -348,6 +422,15 @@ struct sfce_cursor {
     unsigned                   is_selecting: 1;
 };
 
+struct sfce_editor_theme {
+};
+
+struct sfce_keypress {
+    uint32_t keycode;
+    int32_t  codepoint;
+    uint8_t  modifiers;
+};
+
 struct sfce_editor_window {
     struct sfce_cursor          *cursors;
     uint32_t                     cursor_count;
@@ -362,11 +445,16 @@ struct sfce_editor_window {
     unsigned                     enable_relative_line_numbering: 1;
 };
 
-struct editor {
-    struct sfce_editor_window  *active_window;
-    struct sfce_editor_window **windows;
-    uint32_t                    window_count;
-    uint32_t                    window_capacity;
+struct sfce_editor_buffer {
+    struct sfce_editor_buffer *prev;
+    struct sfce_editor_buffer *next;
+    const char                *filepath;
+    struct sfce_piece_tree    *tree;
+};
+
+struct sfce_editor {
+    struct sfce_editor_window *active_window;
+    struct sfce_editor_buffer *open_buffers;
 };
 
 int32_t round_multiple_of_two(int32_t value, int32_t multiple);
@@ -385,7 +473,8 @@ enum sfce_error_code sfce_write(const void *buffer, int32_t buffer_size);
 enum sfce_error_code sfce_write_zero_terminated_string(const char *buffer);
 enum sfce_error_code sfce_enable_console_temp_buffer();
 enum sfce_error_code sfce_disable_console_temp_buffer();
-enum sfce_keycode sfce_get_keypress();
+int32_t sfce_parse_csi_parameter(int32_t *character);
+struct sfce_keypress sfce_get_keypress();
 
 enum sfce_error_code sfce_save_console_state(struct sfce_console_state *state);
 enum sfce_error_code sfce_restore_console_state(struct sfce_console_state *state);
@@ -393,18 +482,14 @@ enum sfce_error_code sfce_enable_virtual_terminal(const struct sfce_console_stat
 enum sfce_error_code sfce_setup_console(struct sfce_console_state *state);
 
 void sfce_string_destroy(struct sfce_string *string);
+void sfce_string_clear(struct sfce_string *string);
 enum sfce_error_code sfce_string_reserve(struct sfce_string *result, int32_t capacity);
 enum sfce_error_code sfce_string_resize(struct sfce_string *result, int32_t size);
 enum sfce_error_code sfce_string_write(struct sfce_string *string, int32_t index, const void *buffer, int32_t buffer_size);
 enum sfce_error_code sfce_string_insert(struct sfce_string *string, int32_t index, const void *buffer, int32_t buffer_size);
 enum sfce_error_code sfce_string_push_back_byte(struct sfce_string *string, uint8_t byte);
 enum sfce_error_code sfce_string_push_back_buffer(struct sfce_string *string, const void *buffer, int32_t buffer_size);
-enum sfce_error_code sfce_string_append_substring(struct sfce_string *string, struct sfce_string source_string, int32_t start_index, int32_t end_index);
-enum sfce_error_code sfce_string_printf(struct sfce_string *string, const void *format, ...);
 enum sfce_error_code sfce_string_nprintf(struct sfce_string *string, int32_t max_length, const void *format, ...);
-enum sfce_error_code sfce_string_vnprintf(struct sfce_string *string, int32_t max_length, const void *format, va_list va_args);
-enum sfce_error_code sfce_string_flush(struct sfce_string *string);
-void sfce_string_clear(struct sfce_string *string);
 int16_t sfce_string_compare(struct sfce_string string0, struct sfce_string string1);
 
 void sfce_line_starts_destroy(struct sfce_line_starts *lines);
@@ -473,10 +558,14 @@ enum sfce_error_code sfce_piece_tree_insert_with_offset(struct sfce_piece_tree *
 enum sfce_error_code sfce_piece_tree_erase_with_offset(struct sfce_piece_tree *tree, int32_t offset, int32_t byte_count);
 enum sfce_error_code sfce_piece_tree_insert_with_position(struct sfce_piece_tree *tree, struct sfce_position position, const char *data, int32_t byte_count);
 enum sfce_error_code sfce_piece_tree_erase_with_position(struct sfce_piece_tree *tree, struct sfce_position start, struct sfce_position end);
+enum sfce_error_code sfce_piece_tree_insert_left_of_node(struct sfce_piece_tree *tree, struct sfce_piece_node *node, const char *data, int32_t byte_count);
+enum sfce_error_code sfce_piece_tree_insert_right_of_node(struct sfce_piece_tree *tree, struct sfce_piece_node *node, const char *data, int32_t byte_count);
+enum sfce_error_code sfce_piece_tree_insert_middle_of_node_position(struct sfce_piece_tree *tree, struct sfce_node_position where, const char *data, int32_t byte_count);
 enum sfce_error_code sfce_piece_tree_insert_with_node_position(struct sfce_piece_tree *tree, struct sfce_node_position position, const char *data, int32_t byte_count);
 enum sfce_error_code sfce_piece_tree_erase_with_node_position(struct sfce_piece_tree *tree, struct sfce_node_position start, struct sfce_node_position end);
 enum sfce_error_code sfce_piece_tree_load_file(struct sfce_piece_tree *tree, const char *filepath);
 enum sfce_error_code sfce_piece_tree_create_snapshot(struct sfce_piece_tree *tree, struct sfce_piece_tree_snapshot *snapshot);
+enum sfce_error_code sfce_piece_tree_from_snapshot(struct sfce_piece_tree *tree, struct sfce_piece_tree_snapshot *snapshot);
 void sfce_piece_tree_recompute_metadata(struct sfce_piece_tree *tree);
 
 enum sfce_error_code sfce_piece_tree_snapshot_set_piece_count(struct sfce_piece_tree_snapshot *snapshot, int32_t count);
@@ -502,7 +591,6 @@ static struct sfce_piece_node sentinel = {
 };
 
 static struct sfce_piece_node *sentinel_ptr = &sentinel;
-static struct sfce_console_cell blank_cell = { .codepoint = ' ' };
 
 static const struct sfce_utf8_property default_utf8_property = {
     SFCE_UNICODE_CATEGORY_CN, 0, SFCE_UNICODE_BIDI_CLASS_NONE, SFCE_UNICODE_DECOMPOSITION_NONE, -1, -1, -1, 1, 0, 0,
@@ -7863,7 +7951,135 @@ int32_t utf8_property_page_offsets[8704] = {
     12928, 12928, 12928, 37760,
 };
 
-int main(int argc, const char *argv[])
+#define BYTE_TO_BINARY(byte)\
+    ((byte) & 0x80 ? '1' : '0'),\
+    ((byte) & 0x40 ? '1' : '0'),\
+    ((byte) & 0x20 ? '1' : '0'),\
+    ((byte) & 0x10 ? '1' : '0'),\
+    ((byte) & 0x08 ? '1' : '0'),\
+    ((byte) & 0x04 ? '1' : '0'),\
+    ((byte) & 0x02 ? '1' : '0'),\
+    ((byte) & 0x01 ? '1' : '0') 
+
+struct keymap_trie {
+    struct keymap_trie *links[128];
+    int32_t             link_count;
+    int32_t             codepoint;
+};
+
+/*
+int main__() {
+    int32_t character;
+    int32_t trie_index = 0;
+    struct keymap_trie *trie_buffer = calloc(0x2000, sizeof *trie_buffer);
+    struct keymap_trie *root = &trie_buffer[trie_index++];
+
+    while (character != '\x1b') {
+        struct keymap_trie *current = root;
+        while (kbhit()) {
+            // struct keymap_trie *trie = &trie_buffer[trie_index++];
+            character = getch();
+        }
+    }
+
+    free(trie_buffer);
+    return 0;
+}
+*/
+
+int main(void)
+{
+    // keypress = {
+    //     keycode: 29
+    //     codepoint: 0
+    //     modifiers: 0b00000000 | 0x0000
+    // }
+    // keypress = {
+    //     keycode: 49
+    //     codepoint: 0
+    //     modifiers: 0b00110010 | 0x0032 | SHIFT
+    // }
+    // keypress = {
+    //     keycode: 49
+    //     codepoint: 0
+    //     modifiers: 0b00110101 | 0x0035 | CTRL
+    // }
+    // keypress = {
+    //     keycode: 49
+    //     codepoint: 0
+    //     modifiers: 0b00110011 | 0x0033 | ALT
+    // }
+    // keypress = {
+    //     keycode: 49
+    //     codepoint: 0
+    //     modifiers: 0b00110100 | 0x0034 | SHIFT + ALT
+    // }
+    // keypress = {
+    //     keycode: 49
+    //     codepoint: 0
+    //     modifiers: 0b00110110 | 0x0036 | SHIFT + CTRL
+    // }
+    // keypress = {
+    //     keycode: 49
+    //     codepoint: 0
+    //     modifiers: 0b00110111 | 0x0037 | CTRL + ALT
+    // }
+    // keypress = {
+    //     keycode: 49
+    //     codepoint: 0
+    //     modifiers: 0b00111000 | 0x0038 | SHIFT + CTRL + ALT
+    // }
+      
+    struct sfce_console_state save_state = {};
+    enum sfce_error_code error_code = sfce_setup_console(&save_state);
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
+    }
+
+    struct sfce_keypress keypress;
+    do {
+        keypress = sfce_get_keypress();
+        if (keypress.keycode != SFCE_KEYCODE_NO_KEY_PRESS) {
+            printf("keypress = {\n  keycode: %d | 0x%02x\n  codepoint: %d\n  modifiers: %04x | %c%c%c%c%c%c%c%c\n}\n", keypress.keycode, keypress.keycode, keypress.codepoint, keypress.modifiers, BYTE_TO_BINARY(keypress.modifiers));
+        }
+    } while (keypress.keycode != SFCE_KEYCODE_ESCAPE);
+
+    sfce_restore_console_state(&save_state);
+
+    return 0;
+    return 0;
+}
+
+int mygetch()
+{
+    int c0 = getch();
+    printf("character: '%c' | \\%03o | 0x%02x | %d\n", c0, c0, c0, c0);
+    return c0;
+}
+
+#define getch() mygetch()
+
+int main1(void)
+{
+    struct sfce_console_state save_state = {};
+    enum sfce_error_code error_code = sfce_setup_console(&save_state);
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
+    }
+
+    int32_t c0 = 0, c1 = 0;
+    do {
+        c1 = c0;
+        c0 = mygetch();
+        printf("character: '%c' | \\%03o | 0x%02x | %d\n", c0, c0, c0, c0);
+    } while (c0 != '\x1b' || c1 != '\x1b');
+
+    sfce_restore_console_state(&save_state);
+
+    return 0;
+}
+
+int main2(int argc, const char *argv[])
 {
     enum sfce_error_code error_code;
 
@@ -7883,15 +8099,19 @@ int main(int argc, const char *argv[])
 
     struct sfce_string line_contents = {};
 
+    // struct sfce_editor editor = {};
+
     struct sfce_editor_window window = {
         .rectangle.left = 0,
         .rectangle.top = 0,
         .rectangle.right = console.window_size.width - 1,
-        .rectangle.bottom = (console.window_size.height - 1) / 2,
+        // .rectangle.bottom = (console.window_size.height - 1) / 2,
+        .rectangle.bottom = console.window_size.height - 1,
         .tree = tree,
         .split_kind = SFCE_SPLIT_NONE,
         .enable_line_numbering = 1,
-        // .enable_relative_line_numbering = 1,
+        .enable_relative_line_numbering = 1,
+        .filepath = argv[1],
     };
 
     sfce_console_buffer_clear(&console);
@@ -7901,29 +8121,41 @@ int main(int argc, const char *argv[])
         goto error;
     }
 
+    struct sfce_keypress keypress;
+    int32_t running = SFCE_TRUE;
+    while (running) {
+        keypress = sfce_get_keypress();
+        switch (keypress.keycode) {
+        // case SFCE_KEYCODE_ESCAPE:
+        case SFCE_KEYCODE_ARROW_RIGHT:
+            running = SFCE_FALSE;
+            break;
+        default:
+            break;
+        }
+        // if (keypress.keycode != SFCE_KEYCODE_NO_KEY_PRESS) {
+        // }
 
-    // const char *str = "// https://code.visualstudio.com/blogs/2018/03/23/text-buffer-reimplementation";
+        error_code = sfce_console_buffer_update(&console);
+        if (error_code != SFCE_ERROR_OK) {
+            goto error;
+        }
 
-    // static const struct sfce_console_style style = {
-    //     .foreground = 0x00FFFFFF,
-    // };
-
-    // sfce_console_buffer_print_string(&console, 0, 0, style, str, strlen(str));
-
-    error_code = sfce_editor_window_display(&window, &console, &line_contents);
-    if (error_code != SFCE_ERROR_OK) {
-        goto error;
+        error_code = sfce_editor_window_display(&window, &console, &line_contents);
+        if (error_code != SFCE_ERROR_OK) {
+            goto error;
+        }
+    
+        error_code = sfce_console_buffer_flush(&console);
+        if (error_code != SFCE_ERROR_OK) {
+            goto error;
+        }
     }
 
-    error_code = sfce_console_buffer_flush(&console);
-    if (error_code != SFCE_ERROR_OK) {
-        goto error;
-    }
+    // _getch();
 
     sfce_string_destroy(&line_contents);
     
-    _getch();
-
     sfce_restore_console_state(&console.save_state);
 
     printf("console.width: %d\n", console.window_size.width);
@@ -8288,7 +8520,9 @@ enum sfce_error_code sfce_enable_virtual_terminal(const struct sfce_console_stat
 
 enum sfce_error_code sfce_get_console_screen_size(struct sfce_window_size *window_size)
 {
-    enum sfce_error_code error_code = sfce_write_zero_terminated_string("\x1b[s\x1b[32767;32767H");
+    // enum sfce_error_code error_code = sfce_write_zero_terminated_string("\x1b[s\x1b[32767;32767H");
+    // enum sfce_error_code error_code = sfce_write_zero_terminated_string("\x1b[s\x1b[32767C\x1b[32767B");
+    enum sfce_error_code error_code = sfce_write_zero_terminated_string("\x1b[7\x1b[32767C\x1b[32767B");
     if (error_code != SFCE_ERROR_OK) {
         return error_code;
     }
@@ -8307,7 +8541,8 @@ enum sfce_error_code sfce_get_console_screen_size(struct sfce_window_size *windo
     window_size->height = 0;
 #endif
 
-    error_code = sfce_write_zero_terminated_string("\x1b[u");
+    error_code = sfce_write_zero_terminated_string("\x1b[8");
+    // error_code = sfce_write_zero_terminated_string("\x1b[u");
     if (error_code != SFCE_ERROR_OK) {
         return error_code;
     }
@@ -8326,6 +8561,541 @@ enum sfce_error_code sfce_disable_console_temp_buffer()
     const char buffer[] = "\x1b[?47l\x1b[?25h\x1b[?1049l";
     return sfce_write(buffer, sizeof(buffer) - 1);
 }
+
+int32_t sfce_parse_csi_parameter(int32_t *character)
+{
+    int32_t parameter = 0;
+
+start:
+    switch (*character) {
+    case '0': case '1': case '2': case '3': case '4':
+    case '5': case '6': case '7': case '8': case '9': {
+        int32_t digit_value = *character - '0';
+        parameter = 10 * parameter + digit_value;
+    } break;
+    case '<':
+    case '=':
+    case '>':
+    case '?':
+    case ':':
+        //
+        // TODO: Implement the required logic for intermediate parameter bytes
+        //
+        break;
+    case ';':
+        goto done;
+        // if (kbhit()) *character = getch();
+        // goto done;
+    }
+
+    if (kbhit()) {
+        *character = getch();
+        goto start;
+    }
+
+done:
+    fprintf(stderr, "parameter: %d\n", parameter);
+    return parameter;
+}
+
+struct sfce_keypress sfce_get_keypress()
+{
+    static const struct sfce_keypress NO_KEYPRESS = { SFCE_KEYCODE_NO_KEY_PRESS, -1, 0 };
+    
+     if (!kbhit()) {
+        return NO_KEYPRESS;
+    }
+
+    int32_t character = getch();
+    switch (character) {
+    csi_begin: case '\x9B': {
+        int32_t parameter = 0, modifiers = 0;
+
+        character = getch();
+        if (isdigit(character)) {
+            parameter = sfce_parse_csi_parameter(&character);
+
+            if (character == ';') {
+                character = getch();
+                modifiers = sfce_parse_csi_parameter(&character) - 1;
+            }
+
+            if (character == '~') {
+                switch (parameter) {
+                case 5: return (struct sfce_keypress) { SFCE_KEYCODE_PAGE_UP, -1, modifiers };
+                case 6: return (struct sfce_keypress) { SFCE_KEYCODE_PAGE_DOWN, -1, modifiers };
+                case 2: return (struct sfce_keypress) { SFCE_KEYCODE_INSERT, -1, modifiers };
+                case 3: return (struct sfce_keypress) { SFCE_KEYCODE_DELETE, -1, modifiers };
+
+                case 15: return (struct sfce_keypress) { SFCE_KEYCODE_F5, -1, modifiers };
+                case 17: return (struct sfce_keypress) { SFCE_KEYCODE_F6, -1, modifiers };
+                case 18: return (struct sfce_keypress) { SFCE_KEYCODE_F7, -1, modifiers };
+                case 19: return (struct sfce_keypress) { SFCE_KEYCODE_F8, -1, modifiers };
+                case 20: return (struct sfce_keypress) { SFCE_KEYCODE_F9, -1, modifiers };
+                case 21: return (struct sfce_keypress) { SFCE_KEYCODE_F10, -1, modifiers };
+                case 24: return (struct sfce_keypress) { SFCE_KEYCODE_F12, -1, modifiers };
+                }
+
+                return NO_KEYPRESS;
+            }
+        }
+
+        switch (character) {
+        case 'A': return (struct sfce_keypress) { SFCE_KEYCODE_ARROW_UP, -1, modifiers };
+        case 'B': return (struct sfce_keypress) { SFCE_KEYCODE_ARROW_DOWN, -1, modifiers };
+        case 'C': return (struct sfce_keypress) { SFCE_KEYCODE_ARROW_RIGHT, -1, modifiers };
+        case 'D': return (struct sfce_keypress) { SFCE_KEYCODE_ARROW_LEFT, -1, modifiers };
+        case 'G':
+        case 'E': return (struct sfce_keypress) { SFCE_KEYCODE_NUMPAD_5, -1, modifiers };
+        case 'F': return (struct sfce_keypress) { SFCE_KEYCODE_END, -1, modifiers };
+        case 'H': return (struct sfce_keypress) { SFCE_KEYCODE_HOME, -1, modifiers };
+        case 'P': return (struct sfce_keypress) { SFCE_KEYCODE_F1, -1, modifiers };
+        case 'Q': return (struct sfce_keypress) { SFCE_KEYCODE_F2, -1, modifiers };
+        case 'R': return (struct sfce_keypress) { SFCE_KEYCODE_F3, -1, modifiers };
+        case 'S': return (struct sfce_keypress) { SFCE_KEYCODE_F4, -1, modifiers };
+        }
+    } break;
+
+    case '\x1b':
+        if (!kbhit()) {
+            return (struct sfce_keypress) { SFCE_KEYCODE_ESCAPE, '\x1b', 0 };
+        }
+
+        character = getch();
+        switch (character) {
+        case '\x1b': return (struct sfce_keypress) { SFCE_KEYCODE_ESCAPE, '\x1b', SFCE_MODIFIER_NONE };
+        case '[':
+            if (!kbhit()) {
+                return (struct sfce_keypress) { '[', 0, SFCE_MODIFIER_ALT };
+            }
+
+            goto csi_begin;
+        case 'N':
+            while (kbhit()) getch();
+            break;
+        case 'O':
+            character = getch();
+            switch (character) {
+            case 'P': return (struct sfce_keypress) { SFCE_KEYCODE_F1, -1, SFCE_MODIFIER_NONE };
+            case 'Q': return (struct sfce_keypress) { SFCE_KEYCODE_F2, -1, SFCE_MODIFIER_NONE };
+            case 'R': return (struct sfce_keypress) { SFCE_KEYCODE_F3, -1, SFCE_MODIFIER_NONE };
+            case 'S': return (struct sfce_keypress) { SFCE_KEYCODE_F4, -1, SFCE_MODIFIER_NONE };
+            }
+            break;
+        default:
+            return (struct sfce_keypress) { character, character, SFCE_MODIFIER_ALT};
+        }
+        
+        break;
+
+    default:
+        return (struct sfce_keypress) { character, character, 0 };
+    }
+
+    return NO_KEYPRESS;
+}
+
+/*
+struct sfce_keypress sfce_get_keypress()
+{
+    if (!kbhit()) {
+        return (struct sfce_keypress) { SFCE_KEYCODE_NO_KEY_PRESS, 0, 0 };
+    }
+
+    #define VT_STATES(o)\
+        o(STATE_GROUND)\
+        o(STATE_ESCAPE)\
+        o(STATE_ESCAPE_INTERMEDIATE)\
+        o(STATE_CSI_ENTRY)\
+        o(STATE_CSI_PARAM)\
+        o(STATE_CSI_INTERMEDIATE)\
+        o(STATE_CSI_IGNORE)\
+        o(STATE_DCS_ENTRY)\
+        o(STATE_DCS_PARAM)\
+        o(STATE_DCS_INTERMEDIATE)\
+        o(STATE_DCS_PASSTHROUGH)\
+        o(STATE_DCS_IGNORE)\
+        o(STATE_OSC_STRING)\
+        o(STATE_SOS_PM_APC_STRING)
+
+    #define o(n) n,
+    enum { VT_STATES(o) };
+    #undef o
+
+    #define o(n) #n,
+    const char *state_names[] = { VT_STATES(o) };
+    #undef o
+
+    int32_t state = STATE_GROUND;
+
+    int32_t character = getch();
+    while (1) {
+        printf("state: %s\n", state_names[state]);
+        switch (character) {
+        case 0x80: case 0x81: case 0x82: case 0x83: case 0x84: case 0x85:
+        case 0x86: case 0x87: case 0x88: case 0x89: case 0x8A: case 0x8B:
+        case 0x8C: case 0x8D: case 0x8E: case 0x8F:
+            state = STATE_GROUND;
+            break;
+        case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x96: case 0x97:
+            state = STATE_GROUND;
+            break;
+        case 0x18:
+        case 0x1A:
+        case 0x99:
+        case 0x9A:
+        case 0x9C:
+            state = STATE_GROUND;
+            break;
+        case 0x1B:
+            state = STATE_ESCAPE;
+            break;
+        case 0x9B:
+            state = STATE_CSI_ENTRY;
+            break;
+        // case 0x9D:
+        //     state = STATE_OSC_STRING;
+        //     break;
+        // case 0x90:
+        //     state = STATE_DCS_ENTRY;
+        //     break;
+        // case 0x98:
+        // case 0x9E:
+        // case 0x9F:
+        //     state = STATE_SOS_PM_APC_STRING;
+        //     break;
+        }
+
+        switch (state) {
+        case STATE_GROUND:
+            character = getch();
+            switch (character) {
+            case 0x00: case 0x01: case 0x02: case 0x03: case 0x04: case 0x05:
+            case 0x06: case 0x07: case 0x08: case 0x09: case 0x0A: case 0x0B:
+            case 0x0C: case 0x0D: case 0x0E: case 0x0F: case 0x10: case 0x11:
+            case 0x12: case 0x13: case 0x14: case 0x15: case 0x16: case 0x17:
+            case 0x19:
+                break;
+
+            case 0x1C: case 0x1D: case 0x1F:
+                break;
+
+            case 0x20: case 0x21: case 0x22: case 0x23: case 0x24: case 0x25:
+            case 0x26: case 0x27: case 0x28: case 0x29: case 0x2A: case 0x2B:
+            case 0x2C: case 0x2D: case 0x2E: case 0x2F: case 0x30: case 0x31:
+            case 0x32: case 0x33: case 0x34: case 0x35: case 0x36: case 0x37:
+            case 0x38: case 0x39: case 0x3A: case 0x3B: case 0x3C: case 0x3D:
+            case 0x3E: case 0x3F: case 0x40: case 0x41: case 0x42: case 0x43:
+            case 0x44: case 0x45: case 0x46: case 0x47: case 0x48: case 0x49:
+            case 0x4A: case 0x4B: case 0x4C: case 0x4D: case 0x4E: case 0x4F:
+            case 0x50: case 0x51: case 0x52: case 0x53: case 0x54: case 0x55:
+            case 0x56: case 0x57: case 0x58: case 0x59: case 0x5A: case 0x5B:
+            case 0x5C: case 0x5D: case 0x5E: case 0x5F: case 0x60: case 0x61:
+            case 0x62: case 0x63: case 0x64: case 0x65: case 0x66: case 0x67:
+            case 0x68: case 0x69: case 0x6A: case 0x6B: case 0x6C: case 0x6D:
+            case 0x6E: case 0x6F: case 0x70: case 0x71: case 0x72: case 0x73:
+            case 0x74: case 0x75: case 0x76: case 0x77: case 0x78: case 0x79:
+            case 0x7A: case 0x7B: case 0x7C: case 0x7D: case 0x7E: case 0x7F:
+                break;
+            }
+
+            break;
+        case STATE_ESCAPE:
+            character = getch();
+            switch (character) {
+            case 0x00: case 0x01: case 0x02: case 0x03: case 0x04: case 0x05:
+            case 0x06: case 0x07: case 0x08: case 0x09: case 0x0A: case 0x0B:
+            case 0x0C: case 0x0D: case 0x0E: case 0x0F: case 0x10: case 0x11:
+            case 0x12: case 0x13: case 0x14: case 0x15: case 0x16: case 0x17:
+            case 0x1C: case 0x1D: case 0x1E: case 0x1F:
+            case 0x19:
+                break; // execute
+            case 0x7F:
+                break; // ignore
+                
+            // case 0x5D: state = STATE_OSC_STRING; break;
+            case 0x5B: state = STATE_CSI_ENTRY; break;
+            // case 0x50: state = STATE_DCS_ENTRY; break;
+            // case 0x58: case 0x5E: case 0x5F:
+            //     state = STATE_SOS_PM_APC_STRING;
+            //     break;
+            case 0x20: case 0x21: case 0x22: case 0x23: case 0x24: case 0x25:
+            case 0x26: case 0x27: case 0x28: case 0x29: case 0x2A: case 0x2B:
+            case 0x2C: case 0x2D: case 0x2E: case 0x2F:
+                state = STATE_ESCAPE_INTERMEDIATE;
+                break;
+            case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x35:
+            case 0x36: case 0x37: case 0x38: case 0x39: case 0x3A: case 0x3B:
+            case 0x3C: case 0x3D: case 0x3E: case 0x3F: case 0x40: case 0x41:
+            case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: case 0x47:
+            case 0x48: case 0x49: case 0x4A: case 0x4B: case 0x4C: case 0x4D:
+            case 0x4E: case 0x4F:
+                state = STATE_GROUND;
+                break;
+            case 0x51: case 0x52: case 0x53: case 0x54: case 0x55: case 0x56: case 0x57:
+                state = STATE_GROUND;
+                break;
+            case 0x60: case 0x61: case 0x62: case 0x63: case 0x64: case 0x65:
+            case 0x66: case 0x67: case 0x68: case 0x69: case 0x6A: case 0x6B:
+            case 0x6C: case 0x6D: case 0x6E: case 0x6F: case 0x70: case 0x71:
+            case 0x72: case 0x73: case 0x74: case 0x75: case 0x76: case 0x77:
+            case 0x78: case 0x79: case 0x7A: case 0x7B: case 0x7C: case 0x7D:
+            case 0x7E:
+                state = STATE_GROUND;
+                break;
+            case 0x59:
+            case 0x5A:
+            case 0x5C:
+                state = STATE_GROUND;
+                break;
+            }
+            break;
+        case STATE_ESCAPE_INTERMEDIATE:
+            character = getch();
+            switch (character) {
+            case 0x00: case 0x01: case 0x02: case 0x03: case 0x04: case 0x05:
+            case 0x06: case 0x07: case 0x08: case 0x09: case 0x0A: case 0x0B:
+            case 0x0C: case 0x0D: case 0x0E: case 0x0F: case 0x10: case 0x11:
+            case 0x12: case 0x13: case 0x14: case 0x15: case 0x16: case 0x17:
+            case 0x1C: case 0x1D: case 0x1E: case 0x1F:
+            case 0x19:
+                break; // execute
+
+            case 0x7F:
+                break; // ignore
+
+            case 0x20: case 0x21: case 0x22: case 0x23: case 0x24: case 0x25:
+            case 0x26: case 0x27: case 0x28: case 0x29: case 0x2A: case 0x2B:
+            case 0x2C: case 0x2D: case 0x2E: case 0x2F:
+                break; // collect
+
+            case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x35:
+            case 0x36: case 0x37: case 0x38: case 0x39: case 0x3A: case 0x3B:
+            case 0x3C: case 0x3D: case 0x3E: case 0x3F: case 0x40: case 0x41:
+            case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: case 0x47:
+            case 0x48: case 0x49: case 0x4A: case 0x4B: case 0x4C: case 0x4D:
+            case 0x4E: case 0x4F: case 0x50: case 0x51: case 0x52: case 0x53:
+            case 0x54: case 0x55: case 0x56: case 0x57: case 0x58: case 0x59:
+            case 0x5A: case 0x5B: case 0x5C: case 0x5D: case 0x5E: case 0x5F:
+            case 0x60: case 0x61: case 0x62: case 0x63: case 0x64: case 0x65:
+            case 0x66: case 0x67: case 0x68: case 0x69: case 0x6A: case 0x6B:
+            case 0x6C: case 0x6D: case 0x6E: case 0x6F: case 0x70: case 0x71:
+            case 0x72: case 0x73: case 0x74: case 0x75: case 0x76: case 0x77:
+            case 0x78: case 0x79: case 0x7A: case 0x7B: case 0x7C: case 0x7D:
+            case 0x7E:
+                state = STATE_GROUND;
+                break;
+            }
+            break;
+        case STATE_CSI_ENTRY:
+            character = getch();
+            switch (character) {
+            case 0x00: case 0x01: case 0x02: case 0x03: case 0x04: case 0x05:
+            case 0x06: case 0x07: case 0x08: case 0x09: case 0x0A: case 0x0B:
+            case 0x0C: case 0x0D: case 0x0E: case 0x0F: case 0x10: case 0x11:
+            case 0x12: case 0x13: case 0x14: case 0x15: case 0x16: case 0x17:
+            case 0x1C: case 0x1D: case 0x1E: case 0x1F:
+            case 0x19:
+                break; // execute
+            case 0x7F:
+                break; // ignore
+
+            case 0x20: case 0x21: case 0x22: case 0x23: case 0x24: case 0x25:
+            case 0x26: case 0x27: case 0x28: case 0x29: case 0x2A: case 0x2B:
+            case 0x2C: case 0x2D: case 0x2E: case 0x2F:
+                state = STATE_CSI_INTERMEDIATE;
+                break;
+            case 0x3A:
+                state = STATE_CSI_IGNORE;
+                break;
+            case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45:
+            case 0x46: case 0x47: case 0x48: case 0x49: case 0x4A: case 0x4B:
+            case 0x4C: case 0x4D: case 0x4E: case 0x4F: case 0x50: case 0x51:
+            case 0x52: case 0x53: case 0x54: case 0x55: case 0x56: case 0x57:
+            case 0x58: case 0x59: case 0x5A: case 0x5B: case 0x5C: case 0x5D:
+            case 0x5E: case 0x5F: case 0x60: case 0x61: case 0x62: case 0x63:
+            case 0x64: case 0x65: case 0x66: case 0x67: case 0x68: case 0x69:
+            case 0x6A: case 0x6B: case 0x6C: case 0x6D: case 0x6E: case 0x6F:
+            case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75:
+            case 0x76: case 0x77: case 0x78: case 0x79: case 0x7A: case 0x7B:
+            case 0x7C: case 0x7D: case 0x7E:
+                state = STATE_GROUND; // csi_dispatch
+                break;
+            case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x35:
+            case 0x36: case 0x37: case 0x38: case 0x39:
+            case 0x3B:
+                state = STATE_CSI_PARAM;
+                break;
+            case 0x3C: case 0x3D: case 0x3E: case 0x3F:
+                state = STATE_CSI_PARAM;
+                break;
+            }
+            break;
+        case STATE_CSI_PARAM:
+            character = getch();
+            switch (character) {
+            case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45:
+            case 0x46: case 0x47: case 0x48: case 0x49: case 0x4A: case 0x4B:
+            case 0x4C: case 0x4D: case 0x4E: case 0x4F: case 0x50: case 0x51:
+            case 0x52: case 0x53: case 0x54: case 0x55: case 0x56: case 0x57:
+            case 0x58: case 0x59: case 0x5A: case 0x5B: case 0x5C: case 0x5D:
+            case 0x5E: case 0x5F: case 0x60: case 0x61: case 0x62: case 0x63:
+            case 0x64: case 0x65: case 0x66: case 0x67: case 0x68: case 0x69:
+            case 0x6A: case 0x6B: case 0x6C: case 0x6D: case 0x6E: case 0x6F:
+            case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75:
+            case 0x76: case 0x77: case 0x78: case 0x79: case 0x7A: case 0x7B:
+            case 0x7C: case 0x7D: case 0x7E:
+                state = STATE_GROUND;
+                break;
+            case 0x20: case 0x21: case 0x22: case 0x23: case 0x24: case 0x25:
+            case 0x26: case 0x27: case 0x28: case 0x29: case 0x2A: case 0x2B:
+            case 0x2C: case 0x2D: case 0x2E: case 0x2F:
+                state = STATE_CSI_INTERMEDIATE;
+                break;
+            case 0x3C: case 0x3D: case 0x3E: case 0x3F:
+            case 0x3A:
+                state = STATE_CSI_IGNORE;
+                break;
+            }
+            break;
+        case STATE_CSI_INTERMEDIATE:
+            character = getch();
+            switch (character) {
+            case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45:
+            case 0x46: case 0x47: case 0x48: case 0x49: case 0x4A: case 0x4B:
+            case 0x4C: case 0x4D: case 0x4E: case 0x4F: case 0x50: case 0x51:
+            case 0x52: case 0x53: case 0x54: case 0x55: case 0x56: case 0x57:
+            case 0x58: case 0x59: case 0x5A: case 0x5B: case 0x5C: case 0x5D:
+            case 0x5E: case 0x5F: case 0x60: case 0x61: case 0x62: case 0x63:
+            case 0x64: case 0x65: case 0x66: case 0x67: case 0x68: case 0x69:
+            case 0x6A: case 0x6B: case 0x6C: case 0x6D: case 0x6E: case 0x6F:
+            case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75:
+            case 0x76: case 0x77: case 0x78: case 0x79: case 0x7A: case 0x7B:
+            case 0x7C: case 0x7D: case 0x7E:
+                state = STATE_GROUND;
+                break;
+            case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x35:
+            case 0x36: case 0x37: case 0x38: case 0x39: case 0x3A: case 0x3B:
+            case 0x3C: case 0x3D: case 0x3E: case 0x3F:
+                state = STATE_CSI_IGNORE;
+                break;
+            }
+
+            break;
+        case STATE_CSI_IGNORE:
+            character = getch();
+            switch (character) {
+            case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45:
+            case 0x46: case 0x47: case 0x48: case 0x49: case 0x4A: case 0x4B:
+            case 0x4C: case 0x4D: case 0x4E: case 0x4F: case 0x50: case 0x51:
+            case 0x52: case 0x53: case 0x54: case 0x55: case 0x56: case 0x57:
+            case 0x58: case 0x59: case 0x5A: case 0x5B: case 0x5C: case 0x5D:
+            case 0x5E: case 0x5F: case 0x60: case 0x61: case 0x62: case 0x63:
+            case 0x64: case 0x65: case 0x66: case 0x67: case 0x68: case 0x69:
+            case 0x6A: case 0x6B: case 0x6C: case 0x6D: case 0x6E: case 0x6F:
+            case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75:
+            case 0x76: case 0x77: case 0x78: case 0x79: case 0x7A: case 0x7B:
+            case 0x7C: case 0x7D: case 0x7E:
+                state = STATE_GROUND;
+                break;
+            }
+
+            break;
+        // case STATE_DCS_ENTRY:
+        //     break;
+        // case STATE_DCS_PARAM:
+        //     break;
+        // case STATE_DCS_INTERMEDIATE:
+        //     break;
+        // case STATE_DCS_PASSTHROUGH:
+        //     break;
+        // case STATE_DCS_IGNORE:
+        //     break;
+        // case STATE_OSC_STRING:
+        //     break;
+        // case STATE_SOS_PM_APC_STRING:
+        //     break;
+        // default: state = STATE_GROUND; break;
+        default: goto done;
+        }
+    }
+
+done:
+    return (struct sfce_keypress) { SFCE_KEYCODE_NO_KEY_PRESS, -1, -1 };
+}
+*/
+
+/*
+struct sfce_keypress sfce_get_keypress()
+{
+    if (!kbhit()) {
+        return (struct sfce_keypress) { SFCE_KEYCODE_NO_KEY_PRESS, 0, 0 };
+    }
+
+    int32_t character = getch();
+    switch (character) {
+    case 'O':
+        character = getch();
+        switch (character) {
+        }
+        
+        break;
+    csi_begin: case '\x9b':
+        
+    case '\x1b':
+        if (!kbhit()) {
+            return (struct sfce_keypress) { SFCE_KEYCODE_ESCAPE, 0, SFCE_MODIFIER_NONE };
+        }
+
+        character = getch();
+        switch (character) {
+        case '\x1b': return (struct sfce_keypress) { SFCE_KEYCODE_ESCAPE, '\x1b', SFCE_MODIFIER_NONE };
+        case '[':
+            if (!kbhit()) {
+                return (struct sfce_keypress) { '[', 0, SFCE_MODIFIER_ALT };
+            }
+
+            goto csi_begin;
+        }
+
+        break;
+	case 0x00: return (struct sfce_keypress) {  0,    0,   SFCE_MODIFIER_CTRL };
+	case 0x01: return (struct sfce_keypress) { 'A',  'A',  SFCE_MODIFIER_CTRL };
+	case 0x02: return (struct sfce_keypress) { 'B',  'B',  SFCE_MODIFIER_CTRL };
+	case 0x03: return (struct sfce_keypress) { 'C',  'C',  SFCE_MODIFIER_CTRL };
+	case 0x04: return (struct sfce_keypress) { 'D',  'D',  SFCE_MODIFIER_CTRL };
+	case 0x05: return (struct sfce_keypress) { 'E',  'E',  SFCE_MODIFIER_CTRL };
+	case 0x06: return (struct sfce_keypress) { 'F',  'F',  SFCE_MODIFIER_CTRL };
+	case 0x07: return (struct sfce_keypress) { 'G',  'G',  SFCE_MODIFIER_CTRL };
+	case 0x08: return (struct sfce_keypress) { 'H',  'H',  SFCE_MODIFIER_CTRL };
+	case 0x09: return (struct sfce_keypress) { 'I',  'I',  SFCE_MODIFIER_CTRL };
+	case 0x0A: return (struct sfce_keypress) { 'J',  'J',  SFCE_MODIFIER_CTRL };
+	case 0x0B: return (struct sfce_keypress) { 'K',  'K',  SFCE_MODIFIER_CTRL };
+	case 0x0C: return (struct sfce_keypress) { 'L',  'L',  SFCE_MODIFIER_CTRL };
+	case 0x0D: return (struct sfce_keypress) { 'M',  'M',  SFCE_MODIFIER_CTRL };
+	case 0x0E: return (struct sfce_keypress) { 'N',  'N',  SFCE_MODIFIER_CTRL };
+	case 0x0F: return (struct sfce_keypress) { 'O',  'O',  SFCE_MODIFIER_CTRL };
+	case 0x10: return (struct sfce_keypress) { 'P',  'P',  SFCE_MODIFIER_CTRL };
+	case 0x11: return (struct sfce_keypress) { 'Q',  'Q',  SFCE_MODIFIER_CTRL };
+	case 0x12: return (struct sfce_keypress) { 'R',  'R',  SFCE_MODIFIER_CTRL };
+	case 0x13: return (struct sfce_keypress) { 'S',  'S',  SFCE_MODIFIER_CTRL };
+	case 0x14: return (struct sfce_keypress) { 'T',  'T',  SFCE_MODIFIER_CTRL };
+	case 0x15: return (struct sfce_keypress) { 'U',  'U',  SFCE_MODIFIER_CTRL };
+	case 0x16: return (struct sfce_keypress) { 'V',  'V',  SFCE_MODIFIER_CTRL };
+	case 0x17: return (struct sfce_keypress) { 'W',  'W',  SFCE_MODIFIER_CTRL };
+	case 0x18: return (struct sfce_keypress) { 'X',  'X',  SFCE_MODIFIER_CTRL };
+	case 0x19: return (struct sfce_keypress) { 'Y',  'Y',  SFCE_MODIFIER_CTRL };
+	case 0x1A: return (struct sfce_keypress) { 'Z',  'Z',  SFCE_MODIFIER_CTRL };
+	case 0x1C: return (struct sfce_keypress) { '\\', '\\', SFCE_MODIFIER_CTRL };
+	case 0x1D: return (struct sfce_keypress) { ']',  ']',  SFCE_MODIFIER_CTRL };
+	case 0x1E: return (struct sfce_keypress) { '~',  '~',  SFCE_MODIFIER_CTRL };
+	case 0x1F: return (struct sfce_keypress) { '?',  '?',  SFCE_MODIFIER_CTRL };
+    }
+
+    // return (struct sfce_keypress) { toupper(character), character, 0 };
+    return (struct sfce_keypress) { SFCE_KEYCODE_NO_KEY_PRESS, -1, -1 };
+}
+*/
 
 enum sfce_error_code sfce_setup_console(struct sfce_console_state *state)
 {
@@ -8359,6 +9129,13 @@ void sfce_string_destroy(struct sfce_string *string)
 {
     if (string->data) free(string->data);
     *string = (struct sfce_string){};
+}
+
+void sfce_string_clear(struct sfce_string *string)
+{
+    if (string != NULL) {
+        string->size = 0;
+    }
 }
 
 enum sfce_error_code sfce_string_reserve(struct sfce_string *result, int32_t capacity)
@@ -8448,48 +9225,42 @@ enum sfce_error_code sfce_string_push_back_buffer(struct sfce_string *string, co
     return SFCE_ERROR_OK;
 }
 
-enum sfce_error_code sfce_string_append_substring(struct sfce_string *string, struct sfce_string source_string, int32_t start_index, int32_t end_index)
-{
-    return sfce_string_push_back_buffer(string, &source_string.data[start_index], end_index - start_index);
-}
-
-enum sfce_error_code sfce_string_printf(struct sfce_string *string, const void *format, ...)
-{
-    enum { TEMP_BUFFER_SIZE = 4096 };
-
-    va_list va_args;
-    va_start(va_args, format);
-
-    char temp_buffer[TEMP_BUFFER_SIZE] = {0};
-    int temp_buffer_size = vsnprintf(temp_buffer, TEMP_BUFFER_SIZE, format, va_args);
-    if (temp_buffer_size < 0) {
-        return SFCE_ERROR_BUFFER_OVERFLOW;
-    }
-
-    va_end(va_args);
-
-    enum sfce_error_code error_code = sfce_string_push_back_buffer(string, temp_buffer, temp_buffer_size);
-    if (error_code != SFCE_ERROR_OK) {
-        return error_code;
-    }
-
-    return SFCE_ERROR_OK;
-}
-
 enum sfce_error_code sfce_string_nprintf(struct sfce_string *string, int32_t max_length, const void *format, ...)
 {
     va_list va_args;
+    enum sfce_error_code error_code;
+
     va_start(va_args, format);
-    enum sfce_error_code error_code = sfce_string_vnprintf(string, max_length, format, va_args);
+    int formatted_string_size = vsnprintf(NULL, 0, format, va_args);
     va_end(va_args);
 
-    return error_code;
+    if (formatted_string_size < 0) {
+        return SFCE_ERROR_BUFFER_OVERFLOW;
+    }
+
+    int32_t write_location = string->size;
+    int32_t size_to_allocate = formatted_string_size > max_length ? max_length : formatted_string_size;
+    error_code = sfce_string_resize(string, string->size + size_to_allocate + 1);
+
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
+    }
+    
+    va_start(va_args, format);
+    formatted_string_size = vsnprintf(&string->data[write_location], string->size - write_location, format, va_args);
+    va_end(va_args);
+
+    if (formatted_string_size < 0) {
+        return SFCE_ERROR_BUFFER_OVERFLOW;
+    }
+
+    // Remove the null terminating character
+    string->size = string->size - 1;
+    return SFCE_ERROR_OK;
 }
 
 enum sfce_error_code sfce_string_vnprintf(struct sfce_string *string, int32_t max_length, const void *format, va_list va_args)
 {
-    enum sfce_error_code error_code;
-
     int formatted_string_size = vsnprintf(NULL, 0, format, va_args);
     if (formatted_string_size < 0) {
         return SFCE_ERROR_BUFFER_OVERFLOW;
@@ -8498,7 +9269,7 @@ enum sfce_error_code sfce_string_vnprintf(struct sfce_string *string, int32_t ma
     int32_t write_location = string->size;
     int32_t size_to_allocate = formatted_string_size > max_length ? max_length : formatted_string_size;
     
-    error_code = sfce_string_resize(string, string->size + size_to_allocate + 1);
+    enum sfce_error_code error_code = sfce_string_resize(string, string->size + size_to_allocate + 1);
     if (error_code != SFCE_ERROR_OK) {
         return error_code;
     }
@@ -8511,18 +9282,6 @@ enum sfce_error_code sfce_string_vnprintf(struct sfce_string *string, int32_t ma
     // Remove the null terminating character
     string->size = string->size - 1;
     return SFCE_ERROR_OK;
-}
-
-enum sfce_error_code sfce_string_flush(struct sfce_string *string)
-{
-    return sfce_write(string->data, string->size);
-}
-
-void sfce_string_clear(struct sfce_string *string)
-{
-    if (string != NULL) {
-        string->size = 0;
-    }
 }
 
 int16_t sfce_string_compare(struct sfce_string string0, struct sfce_string string1)
@@ -9806,6 +10565,80 @@ enum sfce_error_code sfce_piece_tree_erase_with_position(struct sfce_piece_tree 
     return sfce_piece_tree_erase_with_node_position(tree, start_node, end_node);
 }
 
+enum sfce_error_code sfce_piece_tree_insert_left_of_node(struct sfce_piece_tree *tree, struct sfce_piece_node *node, const char *data, int32_t byte_count)
+{
+    struct sfce_piece_node *subtree = sentinel_ptr;
+    enum sfce_error_code error_code = sfce_piece_tree_create_node_subtree(tree, data, byte_count, &subtree);
+
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
+    }
+
+    sfce_piece_node_insert_left(&tree->root, node, subtree);
+    return SFCE_ERROR_OK;
+}
+
+enum sfce_error_code sfce_piece_tree_insert_right_of_node(struct sfce_piece_tree *tree, struct sfce_piece_node *node, const char *data, int32_t byte_count)
+{
+    enum sfce_error_code error_code;
+    struct sfce_string_buffer *string_buffer = &tree->buffers[node->piece.buffer_index];
+    int32_t offset = sfce_string_buffer_position_to_offset(string_buffer, node->piece.end);
+    int32_t remaining = SFCE_STRING_BUFFER_SIZE_THRESHOLD - string_buffer->content.size;
+
+    if (offset == string_buffer->content.size && remaining >= byte_count) {
+        error_code = sfce_string_buffer_append_content(string_buffer, data, byte_count);
+        
+        if (error_code != SFCE_ERROR_OK) {
+            return error_code;
+        }
+
+        node->piece.end = sfce_string_buffer_get_end_position(string_buffer);
+        sfce_piece_recompute_metadata(tree, &node->piece);
+        sfce_piece_node_recompute_metadata(&tree->root, node);
+        return SFCE_ERROR_OK;
+    }
+
+    struct sfce_piece_node *subtree = sentinel_ptr;
+    error_code = sfce_piece_tree_create_node_subtree(tree, data, byte_count, &subtree);
+    
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
+    }
+
+    sfce_piece_node_insert_right(&tree->root, node, subtree);
+    return SFCE_ERROR_OK;
+}
+
+enum sfce_error_code sfce_piece_tree_insert_middle_of_node_position(struct sfce_piece_tree *tree, struct sfce_node_position where, const char *data, int32_t byte_count)
+{
+    struct sfce_string_buffer *string_buffer = &tree->buffers[where.node->piece.buffer_index];
+    struct sfce_piece_node *right_node = sfce_piece_node_create(where.node->piece);
+    struct sfce_piece_node *left_node = where.node;
+
+    if (right_node == NULL) {
+        return SFCE_ERROR_OUT_OF_MEMORY;
+    }
+
+    struct sfce_string_buffer_position middle = sfce_string_buffer_move_position_by_offset(
+        string_buffer, where.node->piece.start, where.offset_within_piece);
+
+    right_node->piece.start = left_node->piece.end = middle;
+
+    sfce_piece_recompute_metadata(tree, &left_node->piece);
+    sfce_piece_recompute_metadata(tree, &right_node->piece);
+    sfce_piece_node_recompute_metadata(&tree->root, where.node);
+
+    struct sfce_piece_node *subtree = sentinel_ptr;
+    enum sfce_error_code error_code = sfce_piece_tree_create_node_subtree(tree, data, byte_count, &subtree);
+    if (error_code != SFCE_ERROR_OK) {
+        return error_code;
+    }
+
+    sfce_piece_node_insert_right(&tree->root, left_node, right_node);
+    sfce_piece_node_insert_right(&tree->root, left_node, subtree);
+    return SFCE_ERROR_OK;
+}
+
 enum sfce_error_code sfce_piece_tree_insert_with_node_position(struct sfce_piece_tree *tree, struct sfce_node_position where, const char *data, int32_t byte_count)
 {
     enum sfce_error_code error_code;
@@ -9824,68 +10657,21 @@ enum sfce_error_code sfce_piece_tree_insert_with_node_position(struct sfce_piece
 
         tree->root = subtree;
         tree->root->color = SFCE_COLOR_BLACK;
-        sfce_piece_tree_recompute_metadata(tree);
-        return SFCE_ERROR_OK;
-    }
-
-    if (where.offset_within_piece == 0) {
-        struct sfce_piece_node *subtree = sentinel_ptr;
-        error_code = sfce_piece_tree_create_node_subtree(tree, data, byte_count, &subtree);
-        if (error_code != SFCE_ERROR_OK) {
-            return error_code;
-        }
-
-        sfce_piece_node_insert_left(&tree->root, where.node, subtree);
-    }
-    else if (where.offset_within_piece >= where.node->piece.length) {
-        struct sfce_string_buffer *string_buffer = &tree->buffers[where.node->piece.buffer_index];
-        int32_t offset = sfce_string_buffer_position_to_offset(string_buffer, where.node->piece.end);
-        int32_t remaining = SFCE_STRING_BUFFER_SIZE_THRESHOLD - string_buffer->content.size;
-
-        if (offset == string_buffer->content.size && remaining >= byte_count) {
-            error_code = sfce_string_buffer_append_content(string_buffer, data, byte_count);
-            if (error_code != SFCE_ERROR_OK) {
-                return error_code;
-            }
-
-            where.node->piece.end = sfce_string_buffer_get_end_position(string_buffer);
-            sfce_piece_recompute_metadata(tree, &where.node->piece);
-            sfce_piece_node_recompute_metadata(&tree->root, where.node);
-        }
-        else {
-            struct sfce_piece_node *subtree = sentinel_ptr;
-            error_code = sfce_piece_tree_create_node_subtree(tree, data, byte_count, &subtree);
-            if (error_code != SFCE_ERROR_OK) {
-                return error_code;
-            }
-
-            sfce_piece_node_insert_right(&tree->root, where.node, subtree);
-        }
     }
     else {
-        struct sfce_string_buffer *string_buffer = &tree->buffers[where.node->piece.buffer_index];
-        struct sfce_piece_node *right_node = sfce_piece_node_create(where.node->piece);
-        struct sfce_piece_node *left_node = where.node;
-
-        if (right_node == NULL) {
-            return SFCE_ERROR_OUT_OF_MEMORY;
+        if (where.offset_within_piece == 0) {
+            error_code = sfce_piece_tree_insert_left_of_node(tree, where.node, data, byte_count);
+        }
+        else if (where.offset_within_piece >= where.node->piece.length) {
+            error_code = sfce_piece_tree_insert_right_of_node(tree, where.node, data, byte_count);
+        }
+        else {
+            error_code = sfce_piece_tree_insert_middle_of_node_position(tree, where, data, byte_count);
         }
 
-        right_node->piece.start = left_node->piece.end = sfce_string_buffer_move_position_by_offset(
-            string_buffer, where.node->piece.start, where.offset_within_piece);
-
-        sfce_piece_recompute_metadata(tree, &left_node->piece);
-        sfce_piece_recompute_metadata(tree, &right_node->piece);
-        sfce_piece_node_recompute_metadata(&tree->root, where.node);
-
-        struct sfce_piece_node *subtree = sentinel_ptr;
-        error_code = sfce_piece_tree_create_node_subtree(tree, data, byte_count, &subtree);
         if (error_code != SFCE_ERROR_OK) {
             return error_code;
         }
-
-        sfce_piece_node_insert_right(&tree->root, left_node, right_node);
-        sfce_piece_node_insert_right(&tree->root, left_node, subtree);
     }
 
     sfce_piece_tree_recompute_metadata(tree);
@@ -9975,31 +10761,32 @@ enum sfce_error_code sfce_piece_tree_load_file(struct sfce_piece_tree *tree, con
         return SFCE_ERROR_UNABLE_TO_OPEN_FILE;
     }
 
-    char buffer[SFCE_STRING_BUFFER_SIZE_THRESHOLD << 1] = {};
     int32_t chunk_size = 0;
-
-    enum sfce_error_code error_code;
-    struct sfce_piece_node *rightmost_node = sfce_piece_node_rightmost(tree->root);
+    char buffer[0x10000] = {};
+    struct sfce_piece piece = {};
+    enum sfce_error_code error_code = SFCE_ERROR_OK;
+    struct sfce_piece_node *rightmost = sfce_piece_node_rightmost(tree->root);
     while (chunk_size = fread(buffer, 1, SFCE_STRING_BUFFER_SIZE_THRESHOLD, fp), chunk_size != 0) {
-        struct sfce_piece piece = {};
         error_code = sfce_piece_tree_create_piece(tree, buffer, chunk_size, &piece);
         if (error_code != SFCE_ERROR_OK) {
-            return error_code;
+            goto done;
         }
 
         struct sfce_piece_node *node = sfce_piece_node_create(piece);
-        
+
         if (node == NULL) {
-            return SFCE_ERROR_OUT_OF_MEMORY;
+            error_code = SFCE_ERROR_OUT_OF_MEMORY;
+            goto done;
         }
 
-        sfce_piece_node_insert_right(&tree->root, rightmost_node, node);
-        rightmost_node = node;
+        sfce_piece_node_insert_right(&tree->root, rightmost, node);
+        rightmost = node;
     }
 
+done:
     sfce_piece_tree_recompute_metadata(tree);
     fclose(fp);
-    return SFCE_ERROR_OK;
+    return error_code;
 }
 
 enum sfce_error_code sfce_piece_tree_get_line_content(struct sfce_piece_tree *tree, int32_t row, struct sfce_string *string)
@@ -10024,6 +10811,31 @@ enum sfce_error_code sfce_piece_tree_create_snapshot(struct sfce_piece_tree *tre
     }
 
     return SFCE_ERROR_OK;
+}
+
+enum sfce_error_code sfce_piece_tree_from_snapshot(struct sfce_piece_tree *tree, struct sfce_piece_tree_snapshot *snapshot)
+{
+    sfce_piece_node_destroy(tree->root);
+    tree->root = sentinel_ptr;
+
+    struct sfce_piece_node *rightmost = tree->root;
+    for (int32_t idx = 0; idx < snapshot->piece_count; ++idx) {
+        struct sfce_piece_node *node = sfce_piece_node_create(snapshot->pieces[idx]);
+        
+        if (node == NULL) {
+            goto error_out_of_mem;
+        }
+
+        sfce_piece_node_insert_right(&tree->root, rightmost, node);
+        rightmost = node;
+    }
+
+    sfce_piece_tree_recompute_metadata(tree);
+    return SFCE_ERROR_OK;
+
+error_out_of_mem:
+    sfce_piece_tree_destroy(tree);
+    return SFCE_ERROR_OUT_OF_MEMORY;
 }
 
 void sfce_piece_tree_recompute_metadata(struct sfce_piece_tree *tree)
@@ -10080,6 +10892,7 @@ void sfce_console_buffer_destroy(struct sfce_console_buffer *console)
 
 void sfce_console_buffer_clear(struct sfce_console_buffer *console)
 {
+    static const struct sfce_console_cell blank_cell = { .codepoint = ' ' };
     const int32_t cell_count = console->window_size.width * console->window_size.height;
 
     for (int32_t idx = 0; idx < cell_count; ++idx) {
@@ -10157,23 +10970,6 @@ enum sfce_error_code sfce_console_buffer_update(struct sfce_console_buffer *cons
 
     return SFCE_ERROR_OK;
 }
-
-// enum sfce_error_code sfce_console_buffer_nprintf(struct sfce_console_buffer *console, int32_t col, int32_t row, struct sfce_console_style style, int32_t max_length, const char *format, ...)
-// {
-//     va_list va_args;
-//     va_start(va_args, format);
-
-//     sfce_string_clear(&console->printf_temp);
-//     enum sfce_error_code error_code = sfce_string_vnprintf(&console->printf_temp, max_length, format, va_args);
-
-//     va_end(va_args);
-
-//     if (error_code != SFCE_ERROR_OK) {
-//         return error_code;
-//     }
-
-//     return sfce_console_buffer_print_string(console, col, row, style, console->printf_temp.data, console->printf_temp.size);
-// }
 
 enum sfce_error_code sfce_console_buffer_print_string(struct sfce_console_buffer *console, int32_t col, int32_t row, struct sfce_console_style style, const void *string, uint32_t length)
 {
@@ -10319,7 +11115,7 @@ enum sfce_error_code sfce_console_buffer_flush(struct sfce_console_buffer *conso
         return error_code;
     }
 
-    error_code = sfce_string_flush(&console->command);
+    error_code = sfce_write(console->command.data, console->command.size);
     if (error_code != SFCE_ERROR_OK) {
         return error_code;
     }
@@ -10357,6 +11153,9 @@ enum sfce_error_code sfce_editor_window_display(struct sfce_editor_window *windo
         .background = 0x00525252,
     };
 
+    // 
+    // TODO: remove memory leak from printing to temporary string.
+    // 
     struct sfce_string *print_string = &(struct sfce_string) {};
 
     int32_t window_width = window->rectangle.right - window->rectangle.left + 1;
@@ -10396,9 +11195,25 @@ enum sfce_error_code sfce_editor_window_display(struct sfce_editor_window *windo
 
     const char *filepath = window->filepath == NULL ? "[Untitled File]" : window->filepath;
 
+    struct sfce_console_cell cell = {
+        .codepoint = ' ',
+        .style = status_style,
+    };
+
+    for (int32_t col = window->rectangle.left; col <= window->rectangle.right; ++col) {
+        sfce_console_buffer_set_cell(console, col, window->rectangle.bottom, cell);
+    }
+
     sfce_string_clear(print_string);
-    sfce_string_nprintf(print_string, window_width, "%s", filepath);
+    sfce_string_nprintf(print_string, window_width, "%s  ", filepath);
+
+    if (window->cursor_count != 0) {
+        struct sfce_mark *mark = &window->cursors->mark;
+        sfce_string_nprintf(print_string, window_width, "%d, %d", mark->col, mark->row);
+    }
+
     sfce_console_buffer_print_string(console, window->rectangle.left, window->rectangle.bottom, status_style, print_string->data, print_string->size);
+    sfce_string_destroy(print_string);
 
     return 0;
 }

@@ -4,7 +4,7 @@ TARGET := bin/$(notdir $(CURDIR)).exe
 .PHONY: run clean
 
 $(TARGET): $(SOURCE) | build
-	gcc $(SOURCE) -Wall -Wextra -Wunused-function -o $(TARGET)
+	gcc $(SOURCE) -Wall -Wextra -Wunused-function -static -static-libgcc -o $(TARGET)
 
 clean:
 	rm -r build/*
