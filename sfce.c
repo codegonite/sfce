@@ -74,6 +74,8 @@ enum { SFCE_STRING_ALLOCATION_SIZE = 256 };
     o(SFCE_ERROR_FAILED_ERASURE)\
     o(SFCE_ERROR_FAILED_CONSOLE_READ)\
     o(SFCE_ERROR_FAILED_CONSOLE_WRITE)\
+    o(SFCE_ERROR_FAILED_FILE_READ)\
+    o(SFCE_ERROR_FAILED_FILE_WRITE)\
     o(SFCE_ERROR_FAILED_WIN32_API_CALL)\
     o(SFCE_ERROR_FAILED_UNIX_API_CALL)\
     o(SFCE_ERROR_UNABLE_TO_CREATE_FILE)\
@@ -8103,7 +8105,7 @@ int main(int argc, const char *argv[])
     struct sfce_piece_tree *tree = sfce_piece_tree_create();
     if (argc > 1) {
         error_code = sfce_piece_tree_load_file(tree, argv[1]);
-        if (error_code != SFCE_ERROR_OK) {
+        if (error_code != SFCE_ERROR_OK && error_code != SFCE_ERROR_UNABLE_TO_OPEN_FILE) {
             goto error;
         }
     }
@@ -8140,6 +8142,14 @@ int main(int argc, const char *argv[])
         case SFCE_KEYCODE_DELETE:
             error_code = sfce_piece_tree_erase_with_position(window.tree, window.main_cursor.position, 1);
 
+            if (error_code != SFCE_ERROR_OK) {
+                goto error;
+            }
+
+            break;
+
+        case SFCE_KEYCODE_F10:
+            error_code = sfce_piece_tree_write_to_file(window.tree, window.filepath);
             if (error_code != SFCE_ERROR_OK) {
                 goto error;
             }
@@ -8192,8 +8202,6 @@ render_console:
         if (error_code != SFCE_ERROR_OK) {
             goto error;
         }
-
-        // sfce_console_buffer_clear(&console);
 
         g_should_log_to_error_string = 0;
         error_code = sfce_editor_window_display(&window, &console, &line_contents);
@@ -9129,29 +9137,13 @@ void sfce_string_buffer_destroy(struct sfce_string_buffer *buffer)
 
 enum sfce_error_code sfce_string_buffer_append_content(struct sfce_string_buffer *buffer, const uint8_t *data, int32_t size)
 {
-    int32_t begin_offset = buffer->content.size;
+    int32_t offset_begin = buffer->content.size;
     enum sfce_error_code error_code = sfce_string_push_back_buffer(&buffer->content, data, size);
     if (error_code != SFCE_ERROR_OK) {
         return error_code;
     }
 
-    for (int32_t offset = begin_offset; offset < buffer->content.size;) {
-        int32_t newline_size = newline_sequence_size(&buffer->content.data[offset], buffer->content.size - offset);
-
-        if (newline_size != 0) {
-            offset += newline_size;
-
-            error_code = sfce_line_starts_push_line_offset(&buffer->line_starts, offset);
-            if (error_code != SFCE_ERROR_OK) {
-                return error_code;
-            }
-        }
-        else {
-            offset += 1;
-        }
-    }
-
-    return SFCE_ERROR_OK;
+    return sfce_string_buffer_recount_line_start_offsets(buffer, offset_begin, buffer->content.size);
 }
 
 enum sfce_error_code sfce_string_buffer_recount_line_start_offsets(struct sfce_string_buffer *buffer, int32_t offset_begin, int32_t offset_end)
@@ -9890,6 +9882,14 @@ struct sfce_node_position sfce_node_position_move_by_offset(struct sfce_node_pos
 
 struct sfce_piece_tree *sfce_piece_tree_create()
 {
+    enum sfce_error_code error_code = SFCE_ERROR_OK;
+    struct sfce_string_buffer string_buffer = {};
+
+    error_code = sfce_line_starts_push_line_offset(&string_buffer.line_starts, 0);
+    if (error_code != SFCE_ERROR_OK) {
+        return NULL;
+    }
+
     struct sfce_piece_tree *tree = malloc(sizeof *tree);
 
     if (tree != NULL) {
@@ -9897,12 +9897,13 @@ struct sfce_piece_tree *sfce_piece_tree_create()
             .root = sentinel_ptr,
             .length = 0,
             .line_count = 1,
+            .change_buffer_index = 0,
         };
 
-        enum sfce_error_code error_code = sfce_piece_tree_add_new_string_buffer(tree);
-
+        error_code = sfce_piece_tree_add_string_buffer(tree, string_buffer);
         if (error_code != SFCE_ERROR_OK) {
-            sfce_piece_tree_destroy(tree);
+            sfce_string_buffer_destroy(&string_buffer);
+            free(tree);
             return NULL;
         }
     }
@@ -10225,13 +10226,20 @@ enum sfce_error_code sfce_piece_tree_get_content_between_node_positions(struct s
 
 enum sfce_error_code sfce_piece_tree_ensure_change_buffer_size(struct sfce_piece_tree *tree, int32_t required_size)
 {
+    enum sfce_error_code error_code = SFCE_ERROR_OK;
     struct sfce_string_buffer *string_buffer = &tree->buffers[tree->change_buffer_index];
     int32_t remaining_size = SFCE_STRING_BUFFER_SIZE_THRESHOLD - string_buffer->content.size;
 
     if (remaining_size < required_size) {
         tree->change_buffer_index = tree->buffer_count;
-        enum sfce_error_code error_code = sfce_piece_tree_add_new_string_buffer(tree);
 
+        struct sfce_string_buffer string_buffer = {};
+        error_code = sfce_line_starts_push_line_offset(&string_buffer.line_starts, 0);
+        if (error_code != SFCE_ERROR_OK) {
+            return error_code;
+        }
+
+        error_code = sfce_piece_tree_add_string_buffer(tree, string_buffer);
         if (error_code != SFCE_ERROR_OK) {
             return error_code;
         }
@@ -10588,32 +10596,20 @@ enum sfce_error_code sfce_piece_tree_write_to_file(struct sfce_piece_tree *tree,
         return SFCE_ERROR_UNABLE_TO_CREATE_FILE;
     }
 
-    int32_t chunk_size = 0;
-    uint8_t buffer[0x10000] = {};
-    struct sfce_piece piece = {};
-    enum sfce_error_code error_code = SFCE_ERROR_OK;
-    struct sfce_piece_node *rightmost = sfce_piece_node_rightmost(tree->root);
-    while (chunk_size = fread(buffer, 1, SFCE_STRING_BUFFER_SIZE_THRESHOLD, fp), chunk_size != 0) {
-        error_code = sfce_piece_tree_create_piece(tree, buffer, chunk_size, &piece);
-        if (error_code != SFCE_ERROR_OK) {
-            goto done;
+    struct sfce_piece_node *node = sfce_piece_node_leftmost(tree->root);
+    while (node != sentinel_ptr) {
+        struct sfce_string_view content = sfce_piece_tree_get_piece_content(tree, node->piece);
+
+        if (fwrite(content.data, 1, content.size, fp) != (size_t)content.size) {
+            fclose(fp);
+            return SFCE_ERROR_FAILED_FILE_WRITE;
         }
 
-        struct sfce_piece_node *node = sfce_piece_node_create(piece);
-
-        if (node == NULL) {
-            error_code = SFCE_ERROR_OUT_OF_MEMORY;
-            goto done;
-        }
-
-        sfce_piece_node_insert_right(&tree->root, rightmost, node);
-        rightmost = node;
+        node = sfce_piece_node_next(node);
     }
 
-done:
-    sfce_piece_tree_recompute_metadata(tree);
     fclose(fp);
-    return error_code;
+    return SFCE_ERROR_OK;
 }
 
 enum sfce_error_code sfce_piece_tree_load_file(struct sfce_piece_tree *tree, const char *filepath)
@@ -10625,11 +10621,9 @@ enum sfce_error_code sfce_piece_tree_load_file(struct sfce_piece_tree *tree, con
         return SFCE_ERROR_UNABLE_TO_OPEN_FILE;
     }
 
-    sfce_piece_tree_set_buffer_count(tree, 0);
-
     int32_t chunk_size = INT32_MAX;
     struct sfce_piece_node *rightmost = sfce_piece_node_rightmost(tree->root);
-    for (int32_t idx = 0; chunk_size != 0; ++idx) {
+    for (int32_t idx = tree->buffer_count; chunk_size != 0; ++idx) {
         struct sfce_string_buffer string_buffer = {};
 
         error_code = sfce_string_resize(&string_buffer.content, SFCE_STRING_BUFFER_SIZE_THRESHOLD);
@@ -10640,20 +10634,17 @@ enum sfce_error_code sfce_piece_tree_load_file(struct sfce_piece_tree *tree, con
         chunk_size = fread(string_buffer.content.data, 1, SFCE_STRING_BUFFER_SIZE_THRESHOLD, fp);
 
         if (chunk_size != 0) {
+            error_code = sfce_string_resize(&string_buffer.content, chunk_size);
+            if (error_code != SFCE_ERROR_OK) goto error;
+
             error_code = sfce_line_starts_push_line_offset(&string_buffer.line_starts, 0);
-            if (error_code != SFCE_ERROR_OK) {
-                goto error;
-            }
+            if (error_code != SFCE_ERROR_OK) goto error;
 
             error_code = sfce_string_buffer_recount_line_start_offsets(&string_buffer, 0, string_buffer.content.size);
-            if (error_code != SFCE_ERROR_OK) {
-                goto error;
-            }
+            if (error_code != SFCE_ERROR_OK) goto error;
 
             error_code = sfce_piece_tree_add_string_buffer(tree, string_buffer);
-            if (error_code != SFCE_ERROR_OK) {
-                goto error;
-            }
+            if (error_code != SFCE_ERROR_OK) goto error;
         }
         else {
 error:
@@ -10671,7 +10662,7 @@ error:
         struct sfce_piece piece = {};
         piece.buffer_index = idx;
         piece.length = string_buffer.content.size;
-        piece.line_count = string_buffer.line_starts.count;
+        piece.line_count = string_buffer.line_starts.count - 1;
         piece.end.line_start_index = string_buffer.line_starts.count - 1;
         piece.end.column = string_buffer.content.size - string_buffer.line_starts.offsets[piece.end.line_start_index];
 
@@ -10679,8 +10670,8 @@ error:
             .left = sentinel_ptr,
             .right = sentinel_ptr,
             .parent = sentinel_ptr,
-            .color = SFCE_COLOR_BLACK,
             .piece = piece,
+            .color = SFCE_COLOR_BLACK,
         };
 
         sfce_piece_node_insert_right(&tree->root, rightmost, node);
