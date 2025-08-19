@@ -263,7 +263,7 @@ function getCharacterWidth(eastAsianWidths, codepoint, categroy) {
     return defaultWidth
 }
 
-function writeIndexArray(stream, data, maximumLineSize) {
+function _writeIndexArray(stream, data, maximumLineSize) {
     const entryLength = getLargestElementLengthAsString(data) + 2
     const entriesPerLine = Math.max(1, Math.floor((maximumLineSize - 4) / entryLength))
     stream.write("{\n")
@@ -292,6 +292,42 @@ function writeIndexArray(stream, data, maximumLineSize) {
     stream.write("};\n")
 }
 
+function formatDataAsCArray(data, maximumLineSize = 80) {
+    const entries = []
+
+    let entryLength = 0
+    for (let idx = 0; idx < data.length; ++idx) {
+        const element = data[idx].toString()
+
+        entryLength = Math.max(entryLength, element.length)
+        entries.push(element)
+    }
+
+    entryLength = entryLength + 2
+    const entriesPerLine = Math.max(1, Math.floor((maximumLineSize - 4) / entryLength))
+
+    let content = ""
+
+    content += `{\n`
+    for (let count = 0; count < data.length;) {
+        let line = `${entries[count++]},`
+
+        for (let idx = 1; idx < entriesPerLine; ++idx) {
+            if (count >= data.length) {
+                break
+            }
+
+            line = line.padEnd(idx * entryLength) + `${entries[count++]},`
+        }
+
+        content += `    ${line}\n`
+    }
+
+    content += `}`
+
+    return content
+}
+
 function segmentArray(array, chunkSize) {
     const segments = []
     const segmentCount = Math.ceil(array.length / chunkSize)
@@ -305,7 +341,7 @@ function segmentArray(array, chunkSize) {
 
 function compressAndCreateIndexArray(dataToCompress) {
     const compressedData = [], compressedIndices = [], processedData = new Map()
-    
+
     for (let idx = 0; idx < dataToCompress.length; ++idx) {
         const data = dataToCompress[idx]
         const key = JSON.stringify(data)
@@ -320,7 +356,7 @@ function compressAndCreateIndexArray(dataToCompress) {
             compressedIndices.push(index)
         }
     }
-    
+
     return [compressedData, compressedIndices]
 }
 
@@ -332,7 +368,7 @@ function createPagedData(array, pageSize) {
 
 function getLargestElementLengthAsString(array) {
     let length = 0
-    
+
     for (let idx = 0; idx < array.length; ++idx) {
         length = Math.max(length, array[idx].toString().length)
     }
@@ -370,7 +406,7 @@ function createProgramUnicodeDescriptors(unicodeData, eastAsianWidths) {
         descriptor.lowercaseMapping = data.simpleLowercaseMapping ?? 0
         descriptor.titlecaseMapping = data.simpleTitlecaseMapping ?? 0
         descriptor.bidiMirrored = data.bidiMirrored ? 1 : 0
-        
+
         descriptors.push(descriptor)
     }
 
@@ -405,9 +441,10 @@ async function main() {
 
     const propertyStrings = []
 
-    for (let codepoint = 0; codepoint <= 0x10FFFF; ++codepoint) {
+    // for (let codepoint = 0; codepoint <= 0x10FFFF; ++codepoint) {
+    for (let codepoint = 0; codepoint < 0x110000; ++codepoint) {
         const data = unicodeData.get(codepoint)
-        
+
         const category = (data?.generalCategory ?? "Cn").toUpperCase()
         const length = data ? getCodepointByteLengthUTF8(data.code) : 0
         const width = data ? getCharacterWidth(eastAsianWidths, data.code, data.category) : 1
@@ -424,12 +461,11 @@ async function main() {
         propertyStrings.push(`{ SFCE_UNICODE_CATEGORY_${category}, ${combiningClass}, SFCE_UNICODE_BIDI_CLASS_${bidiClass}, SFCE_UNICODE_DECOMPOSITION_${decomposition}, ${width}, ${bidiMirrored} }`)
     }
 
-
     console.log(`Compressing ${propertyStrings.length} unicode properties!`)
 
     const [compressedData, pages, pageIndicies] = createPagedData(propertyStrings, PAGE_SIZE)
     const pageOffsets = pageIndicies.map(e => PAGE_SIZE * e)
-    const indices     = pages.flat()
+    const indices = pages.flat()
 
     const stream = fs.createWriteStream(filepath)
 
@@ -442,14 +478,14 @@ async function main() {
 
     console.log(`Writing ${compressedData.length} unicode properties to "${filepath}"!`)
 
-    stream.write(`static const struct sfce_utf8_property utf8_properties[${compressedData.length}] = `)
-    writeIndexArray(stream, compressedData, 80)
- 
-    stream.write(`int32_t utf8_property_indices[${indices.length}] = `)
-    writeIndexArray(stream, indices, 80)
+    stream.write(`static const struct sfce_utf8_property utf8_properties[${compressedData.length}] = ${formatDataAsCArray(compressedData)};\n`)
+    // formatDataAsCArray(stream, compressedData, 80)
 
-    stream.write(`int32_t utf8_property_page_offsets[${pageOffsets.length}] = `)
-    writeIndexArray(stream, pageOffsets, 80)
+    stream.write(`int32_t utf8_property_indices[${indices.length}] = ${formatDataAsCArray(indices)};\n`)
+    // formatDataAsCArray(stream, indices, 80)
+
+    stream.write(`int32_t utf8_property_page_offsets[${pageOffsets.length}] = ${formatDataAsCArray(pageOffsets)};\n`)
+    // formatDataAsCArray(stream, pageOffsets, 80)
 
     stream.close()
 }
