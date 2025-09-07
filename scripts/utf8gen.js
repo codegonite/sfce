@@ -87,7 +87,7 @@ function readUnicodeDataLine(line, uppercase, lowercase) {
     result.canonicalCombiningClass = parseInt(matches[4])
     result.bidiClass = matches[5]
     result.decompositionType = matches[7]
-    result.decompompositionMapping = matches[8] !== "" ? matches[8].split(/\s+/g).map(e => parseInt(e, 16)) : null
+    result.decompositionMapping = matches[8] !== "" ? matches[8].split(/\s+/g).map(e => parseInt(e, 16)) : null
     result.decimalDigit = matches[10]
     result.digit = matches[11]
     result.numeric = matches[12]
@@ -96,7 +96,7 @@ function readUnicodeDataLine(line, uppercase, lowercase) {
     result.isoComment = matches[15]
     result.simpleUppercaseMapping = matches[16] !== "" ? parseInt(matches[16], 16) : null
     result.simpleLowercaseMapping = matches[17] !== "" ? parseInt(matches[17], 16) : null
-    result.simpleTitlecaseMapping = matches[18] !== "" ? parseInt(matches[18], 16) : null
+    result.simpleTitleCaseMapping = matches[18] !== "" ? parseInt(matches[18], 16) : null
 
     const hasUppercaseMapping = result.simpleUppercaseMapping !== null || result.simpleUppercaseMapping !== undefined
     const hasLowercaseMapping = result.simpleLowercaseMapping !== null || result.simpleLowercaseMapping !== undefined
@@ -111,8 +111,8 @@ function readUnicodeDataLine(line, uppercase, lowercase) {
         }
     }
 
-    if (result.simpleTitlecaseMapping == null) {
-        result.simpleTitlecaseMapping = result.simpleUppercaseMapping
+    if (result.simpleTitleCaseMapping == null) {
+        result.simpleTitleCaseMapping = result.simpleUppercaseMapping
     }
 
     return result
@@ -135,18 +135,18 @@ function readHexRanges(content) {
     return result
 }
 
-function readGraphemeBoundclasses(graphemeBreakContents, emojiDataContent) {
-    const graphemeBoundclass = new Map()
+function readGraphemeBoundClasses(graphemeBreakContents, emojiDataContent) {
+    const graphemeBoundClass = new Map()
     const hexRanges = [ ... readHexRanges(graphemeBreakContents),
                         ... readHexRanges(emojiDataContent) ]
     for (const {range0, range1, description} of hexRanges) {
         const newDescription = description.toUpperCase()
         for (let idx = range0; idx <= range1; ++idx) {
-            graphemeBoundclass.set(idx, newDescription)
+            graphemeBoundClass.set(idx, newDescription)
         }
     }
 
-    return graphemeBoundclass
+    return graphemeBoundClass
 }
 
 function readEastAsianWidths(eastAsianWidthContents) {
@@ -231,10 +231,10 @@ function getCodepointByteLengthUTF8(codepoint) {
     return 0;
 }
 
-function getCharacterWidth(eastAsianWidths, codepoint, categroy) {
+function getCharacterWidth(eastAsianWidths, codepoint, category) {
     let defaultWidth = 1
 
-    switch (categroy) {
+    switch (category) {
     case "Mc":
         defaultWidth = 0
         break
@@ -362,8 +362,8 @@ function compressAndCreateIndexArray(dataToCompress) {
 
 function createPagedData(array, pageSize) {
     const [compressedData, indices] = compressAndCreateIndexArray(array);
-    const [pages,          pageIndicies] = compressAndCreateIndexArray(segmentArray(indices, pageSize));
-    return [ compressedData, pages, pageIndicies ]
+    const [pages, pageIndices] = compressAndCreateIndexArray(segmentArray(indices, pageSize));
+    return [ compressedData, pages, pageIndices ]
 }
 
 function getLargestElementLengthAsString(array) {
@@ -401,10 +401,10 @@ function createProgramUnicodeDescriptors(unicodeData, eastAsianWidths) {
         descriptor.combiningClass = data.canonicalCombiningClass
         descriptor.bidiClass = (data.bidiClass ?? "NONE").toUpperCase()
         descriptor.decomposition = (data.decompositionType ?? "NONE").toUpperCase()
-        descriptor.decompositionMapping = data.decompompositionMapping ?? codepoint
+        descriptor.decompositionMapping = data.decompositionMapping ?? codepoint
         descriptor.uppercaseMapping = data.simpleUppercaseMapping ?? 0
         descriptor.lowercaseMapping = data.simpleLowercaseMapping ?? 0
-        descriptor.titlecaseMapping = data.simpleTitlecaseMapping ?? 0
+        descriptor.titleCaseMapping = data.simpleTitleCaseMapping ?? 0
         descriptor.bidiMirrored = data.bidiMirrored ? 1 : 0
 
         descriptors.push(descriptor)
@@ -416,14 +416,14 @@ function createProgramUnicodeDescriptors(unicodeData, eastAsianWidths) {
 async function main() {
     const filepath = process.argv[2] || "sfce_utf8_properties.c"
 
-    console.log("Loading files from url: \"https://www.unicode.org/Public/16.0.0/\"!")
+    console.log("Loading files from url: 'https://www.unicode.org/Public/16.0.0/'!")
     const UNICODE_DATA = await getContentsFromURL("https://www.unicode.org/Public/16.0.0/ucd/UnicodeData.txt")
-    const GRAPHEME_BREAK_PROPERTY = await getContentsFromURL("https://www.unicode.org/Public/16.0.0/ucd/auxiliary/GraphemeBreakProperty.txt")
+    // const GRAPHEME_BREAK_PROPERTY = await getContentsFromURL("https://www.unicode.org/Public/16.0.0/ucd/auxiliary/GraphemeBreakProperty.txt")
     const DERIVED_CORE_PROPERTIES = await getContentsFromURL("https://www.unicode.org/Public/16.0.0/ucd/DerivedCoreProperties.txt")
-    const COMPOSITION_EXCLUSIONS = await getContentsFromURL("https://www.unicode.org/Public/16.0.0/ucd/CompositionExclusions.txt")
-    const CASE_FOLDING = await getContentsFromURL("https://www.unicode.org/Public/16.0.0/ucd/CaseFolding.txt")
+    // const COMPOSITION_EXCLUSIONS = await getContentsFromURL("https://www.unicode.org/Public/16.0.0/ucd/CompositionExclusions.txt")
+    // const CASE_FOLDING = await getContentsFromURL("https://www.unicode.org/Public/16.0.0/ucd/CaseFolding.txt")
     const EAST_ASIAN_WIDTH = await getContentsFromURL("https://www.unicode.org/Public/16.0.0/ucd/EastAsianWidth.txt")
-    const EMOJI_DATA = await getContentsFromURL("https://www.unicode.org/Public/16.0.0/ucd/emoji/emoji-data.txt")
+    // const EMOJI_DATA = await getContentsFromURL("https://www.unicode.org/Public/16.0.0/ucd/emoji/emoji-data.txt")
 
     console.log("Parsing the information from the loaded files!")
     const derivedCoreProperties = readHexRanges(DERIVED_CORE_PROPERTIES)
@@ -431,63 +431,54 @@ async function main() {
     const uppercase = createSetFromRanges(derivedCoreProperties.filter(e => e.description == "Uppercase"))
     const lowercase = createSetFromRanges(derivedCoreProperties.filter(e => e.description == "Lowercase"))
 
-    const graphemeBoundclasses = readGraphemeBoundclasses(GRAPHEME_BREAK_PROPERTY, EMOJI_DATA)
+    // const graphemeBoundClasses = readGraphemeBoundClasses(GRAPHEME_BREAK_PROPERTY, EMOJI_DATA)
     const eastAsianWidths = readEastAsianWidths(EAST_ASIAN_WIDTH)
     const unicodeData = readUnicodeData(UNICODE_DATA, uppercase, lowercase)
-    const caseFolding = readCaseFolding(CASE_FOLDING)
-    const exclusions = readCompositionExclusions(COMPOSITION_EXCLUSIONS)
+    // const caseFolding = readCaseFolding(CASE_FOLDING)
+    // const exclusions = readCompositionExclusions(COMPOSITION_EXCLUSIONS)
 
     console.log("Grouping unicode properties!")
 
     const propertyStrings = []
 
-    // for (let codepoint = 0; codepoint <= 0x10FFFF; ++codepoint) {
     for (let codepoint = 0; codepoint < 0x110000; ++codepoint) {
         const data = unicodeData.get(codepoint)
 
         const category = (data?.generalCategory ?? "Cn").toUpperCase()
-        const length = data ? getCodepointByteLengthUTF8(data.code) : 0
+        // const length = data ? getCodepointByteLengthUTF8(data.code) : 0
         const width = data ? getCharacterWidth(eastAsianWidths, data.code, data.category) : 1
         const combiningClass = data?.canonicalCombiningClass ?? 0
         const bidiClass = (data?.bidiClass ?? "NONE").toUpperCase()
         const decomposition = (data?.decompositionType ?? "NONE").toUpperCase()
-        // const decompositionMapping = data?.decompompositionMapping ?? codepoint
-        const uppercaseMapping = data?.simpleUppercaseMapping ?? -1
-        const lowercaseMapping = data?.simpleLowercaseMapping ?? -1
-        const titlecaseMapping = data?.simpleTitlecaseMapping ?? -1
+        // const uppercaseMapping = data?.simpleUppercaseMapping ?? -1
+        // const lowercaseMapping = data?.simpleLowercaseMapping ?? -1
+        // const titleCaseMapping = data?.simpleTitleCaseMapping ?? -1
         const bidiMirrored = data?.bidiMirrored ? 1 : 0
 
-        // propertyStrings.push(`{ SFCE_UNICODE_CATEGORY_${category}, ${combiningClass}, SFCE_UNICODE_BIDI_CLASS_${bidiClass}, SFCE_UNICODE_DECOMPOSITION_${decomposition}, ${uppercaseMapping}, ${lowercaseMapping}, ${titlecaseMapping}, ${width}, ${length}, ${bidiMirrored} }`)
         propertyStrings.push(`{ SFCE_UNICODE_CATEGORY_${category}, ${combiningClass}, SFCE_UNICODE_BIDI_CLASS_${bidiClass}, SFCE_UNICODE_DECOMPOSITION_${decomposition}, ${width}, ${bidiMirrored} }`)
     }
 
     console.log(`Compressing ${propertyStrings.length} unicode properties!`)
 
-    const [compressedData, pages, pageIndicies] = createPagedData(propertyStrings, PAGE_SIZE)
-    const pageOffsets = pageIndicies.map(e => PAGE_SIZE * e)
+    const [compressedData, pages, pageIndices] = createPagedData(propertyStrings, PAGE_SIZE)
+    const pageOffsets = pageIndices.map(e => PAGE_SIZE * e)
     const indices = pages.flat()
 
-    const stream = fs.createWriteStream(filepath)
+    console.log(`Writing ${compressedData.length} unicode properties to "${filepath}"!`)
 
+    const stream = fs.createWriteStream(filepath)
     stream.write(`\
 //
 // Auto generated by ${path.basename(__filename)} at ${new Date().toLocaleDateString()}
 // Using a page size of ${PAGE_SIZE} bytes.
 // 
 `)
-
-    console.log(`Writing ${compressedData.length} unicode properties to "${filepath}"!`)
-
     stream.write(`static const struct sfce_utf8_property utf8_properties[${compressedData.length}] = ${formatDataAsCArray(compressedData)};\n`)
-    // formatDataAsCArray(stream, compressedData, 80)
-
     stream.write(`int32_t utf8_property_indices[${indices.length}] = ${formatDataAsCArray(indices)};\n`)
-    // formatDataAsCArray(stream, indices, 80)
-
     stream.write(`int32_t utf8_property_page_offsets[${pageOffsets.length}] = ${formatDataAsCArray(pageOffsets)};\n`)
-    // formatDataAsCArray(stream, pageOffsets, 80)
-
     stream.close()
+
+    console.log(eastAsianWidths)
 }
 
 main()

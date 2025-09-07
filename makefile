@@ -1,5 +1,5 @@
 SOURCE := sfce.c
-TARGET := sfce
+TARGET := bin\sfce
 
 .PHONY: run clean
 
