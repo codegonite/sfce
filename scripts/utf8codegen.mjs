@@ -325,25 +325,48 @@ function stringifyCaseMappings(mappings, defaultReturn = null, fixedOutput = fal
                 continue
             }
 
-            let line = "    "
             const outputStart = valueGroups[idxGroup][0].outputStart
-            for (let idxValue = 0; idxValue < valueGroups[idxGroup].length; ++idxValue) {
-                const value = valueGroups[idxGroup][idxValue]
-                const valueString = `case ${value.inputStart}: `
-                const newLine = line + valueString
+            const valueStrings = valueGroups[idxGroup].map(value => `case ${value.inputStart}: `)
+            const longestValueString = valueStrings.reduce((a, b) => Math.max(a, b.length), 0)
+            const paddedValueStrings = valueStrings.map(e => e.padEnd(longestValueString))
+            const stringsPerLine = Math.floor((80 - 4) / longestValueString)
 
-                if (newLine.length >= 80) {
-                    result += line.trimEnd() + "\n"
-                    line = `    ${valueString}`
+            console.log({stringsPerLine})
+
+            for (let idx = 0; idx < paddedValueStrings.length; ++idx) {
+                if (idx % stringsPerLine == 0 && idx != 0) {
+                    result = result.trimEnd() + "\n"
                 }
-                else {
-                    line = newLine
+
+                if (result[result.length - 1] == "\n") {
+                    result += "    "
                 }
+
+                result += paddedValueStrings[idx]
             }
 
-            if (line.length != 0) {
-                result += line.trimEnd() + "\n"
+            if (result[result.length - 1] != "\n") {
+                result += "\n"
             }
+
+            // let line = "    "
+            // for (let idxValue = 0; idxValue < valueGroups[idxGroup].length; ++idxValue) {
+            //     const value = valueGroups[idxGroup][idxValue]
+            //     const valueString = `case ${value.inputStart}: `
+            //     const newLine = line + valueString
+
+            //     if (newLine.length >= 80) {
+            //         result += line.trimEnd() + "\n"
+            //         line = `    ${valueString}`
+            //     }
+            //     else {
+            //         line = newLine
+            //     }
+            // }
+
+            // if (line.length != 0) {
+            //     result += line.trimEnd() + "\n"
+            // }
 
             result += `        return ${outputStart};\n`
         }
@@ -509,13 +532,13 @@ enum sfce_unicode_category {
 `)
 
     stream.write(`\n`)
+    stream.write(`enum sfce_unicode_category sfce_codepoint_category(int32_t codepoint)\n{\n${stringifyCaseMappings(categoryMappings, "SFCE_UNICODE_CATEGORY_CN", true)}}\n`)
+    stream.write(`\n`)
     stream.write(`int32_t sfce_codepoint_to_upper(int32_t codepoint)\n{\n${stringifyCaseMappings(uppercaseMappings, "codepoint")}}\n`)
     stream.write(`\n`)
     stream.write(`int32_t sfce_codepoint_to_lower(int32_t codepoint)\n{\n${stringifyCaseMappings(lowercaseMappings, "codepoint")}}\n`)
     stream.write(`\n`)
-    stream.write(`enum sfce_unicode_category sfce_codepoint_category(int32_t codepoint)\n{\n${stringifyCaseMappings(categoryMappings, "SFCE_UNICODE_CATEGORY_CN", true)}}\n`)
-    stream.write(`\n`)
-    stream.write(`int8_t sfce_codepoint_width(int32_t codepoint)\n{\n${stringifyCaseMappings(widthMappings, "1", true)}}\n`)
+    stream.write(`uint8_t sfce_codepoint_width(int32_t codepoint)\n{\n${stringifyCaseMappings(widthMappings, "1", true)}}\n`)
     // stream.write(`int32_t sfce_codepoint_to_lower(int32_t codepoint)\n`)
 
     // stream.write(`uint8_t sfce_codepoint_width(int32_t codepoint)\n`)
