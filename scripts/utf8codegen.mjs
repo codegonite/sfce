@@ -267,12 +267,33 @@ function readEastAsianWidths(eastAsianWidthContents) {
     return eastAsianWidths
 }
 
+function groupBy(elements, callbackKey, callbackMap) {
+    const result = new Map()
+
+    for (let idx = 0; idx < elements.length; ++idx) {
+        const key = callbackKey(elements[idx])
+
+        const collection = result.get(key);
+        const mappedItem = callbackMap ? callbackMap(elements[idx]) : elements[idx]
+        if (collection === undefined || collection === null) {
+            result.set(key, [mappedItem]);
+        }
+        else {
+            collection.push(mappedItem);
+        }
+    }
+
+    return result
+}
+
 function reduceCasingMappings(mappings, fixedOutput = false) {
     for (let idx = 1; idx < mappings.length;) {
         const range0 = mappings[idx].inputEnd  - mappings[idx - 1].inputStart
         const range1 = mappings[idx].outputStart - mappings[idx - 1].outputStart
 
-        if (mappings[idx].inputStart == mappings[idx - 1].inputEnd + 1 && (fixedOutput || range0 == range1)) {
+        if (mappings[idx].inputStart == mappings[idx - 1].inputEnd + 1 && (
+            (fixedOutput && mappings[idx].outputStart == mappings[idx - 1].outputStart) || range0 == range1
+        )) {
             mappings.splice(idx - 1, 2, {
                 inputStart:  mappings[idx - 1].inputStart,
                 inputEnd:    mappings[idx].inputEnd,
@@ -294,25 +315,62 @@ function stringifyCaseMappings(mappings, defaultReturn = null, fixedOutput = fal
     const ranges = mappings.filter(e => e.inputStart != e.inputEnd)
     const values = mappings.filter(e => e.inputStart == e.inputEnd)
 
-    for (let idx = 0; idx < ranges.length; ++idx) {
-        result += `    if (codepoint > ${ranges[idx].inputStart - 1} && codepoint < ${ranges[idx].inputEnd + 1})`
+    if (values.length > 0) {
+        const valueGroups = [ ... groupBy(values, e => e.outputStart).values() ]
+        result += `    switch (codepoint) {\n`
+        for (let idxGroup = 0; idxGroup < valueGroups.length; ++idxGroup) {
+            if (valueGroups[idxGroup].length == 1) {
+                const value = valueGroups[idxGroup][0]
+                result += `    case ${value.inputStart}: return ${value.outputStart};\n`
+                continue
+            }
 
-        if (fixedOutput) {
-            result += ` return ${ranges[idx].outputStart};\n`
+            let line = "    "
+            const outputStart = valueGroups[idxGroup][0].outputStart
+            for (let idxValue = 0; idxValue < valueGroups[idxGroup].length; ++idxValue) {
+                const value = valueGroups[idxGroup][idxValue]
+                const valueString = `case ${value.inputStart}: `
+                const newLine = line + valueString
+
+                if (newLine.length >= 80) {
+                    result += line.trimEnd() + "\n"
+                    line = `    ${valueString}`
+                }
+                else {
+                    line = newLine
+                }
+            }
+
+            if (line.length != 0) {
+                result += line.trimEnd() + "\n"
+            }
+
+            result += `        return ${outputStart};\n`
         }
-        else {
-            const difference = ranges[idx].outputStart - ranges[idx].inputStart
-            if      (difference > 0) result += ` return codepoint + ${ difference};\n`
-            else if (difference < 0) result += ` return codepoint - ${-difference};\n`
-            else                     result += ` return codepoint;\n`
-        }
+        result += `    }\n\n`
+
+        // result += `    switch (codepoint) {\n`
+        // for (let idx = 0; idx < values.length; ++idx) {
+        //     result += `        case ${values[idx].inputStart}: return ${values[idx].outputStart};\n`
+        // }
+        // result += `    }\n\n`
     }
 
-    result += `\n    switch (codepoint) {\n`
-    for (let idx = 0; idx < values.length; ++idx) {
-        result += `        case ${values[idx].inputStart}: return ${values[idx].outputStart};\n`
+    if (ranges.length > 0) {
+        for (let idx = 0; idx < ranges.length; ++idx) {
+            result += `    if (codepoint > ${ranges[idx].inputStart - 1} && codepoint < ${ranges[idx].inputEnd + 1})`
+
+            if (fixedOutput) {
+                result += ` return ${ranges[idx].outputStart};\n`
+            }
+            else {
+                const difference = ranges[idx].outputStart - ranges[idx].inputStart
+                if      (difference > 0) result += ` return codepoint + ${ difference};\n`
+                else if (difference < 0) result += ` return codepoint - ${-difference};\n`
+                else                     result += ` return codepoint;\n`
+            }
+        }
     }
-    result += `    }\n\n`
 
     if (defaultReturn != null) {
         result += `    return ${defaultReturn};\n`
