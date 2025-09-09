@@ -312,8 +312,8 @@ function reduceCasingMappings(mappings, fixedOutput = false) {
 function stringifyCaseMappings(mappings, defaultReturn = null, fixedOutput = false) {
     let result = ""
 
-    const ranges = mappings.filter(e => e.inputStart != e.inputEnd)
-    const values = mappings.filter(e => e.inputStart == e.inputEnd)
+    let ranges = mappings.filter(e => e.inputStart != e.inputEnd)
+    let values = mappings.filter(e => e.inputStart == e.inputEnd)
 
     if (values.length > 0) {
         const valueGroups = [ ... groupBy(values, e => e.outputStart).values() ]
@@ -331,8 +331,6 @@ function stringifyCaseMappings(mappings, defaultReturn = null, fixedOutput = fal
             const paddedValueStrings = valueStrings.map(e => e.padEnd(longestValueString))
             const stringsPerLine = Math.floor((80 - 4) / longestValueString)
 
-            console.log({stringsPerLine})
-
             for (let idx = 0; idx < paddedValueStrings.length; ++idx) {
                 if (idx % stringsPerLine == 0 && idx != 0) {
                     result = result.trimEnd() + "\n"
@@ -346,7 +344,7 @@ function stringifyCaseMappings(mappings, defaultReturn = null, fixedOutput = fal
             }
 
             if (result[result.length - 1] != "\n") {
-                result += "\n"
+                result = result.trimEnd() + "\n"
             }
 
             // let line = "    "
@@ -534,9 +532,9 @@ enum sfce_unicode_category {
     stream.write(`\n`)
     stream.write(`enum sfce_unicode_category sfce_codepoint_category(int32_t codepoint)\n{\n${stringifyCaseMappings(categoryMappings, "SFCE_UNICODE_CATEGORY_CN", true)}}\n`)
     stream.write(`\n`)
-    stream.write(`int32_t sfce_codepoint_to_upper(int32_t codepoint)\n{\n${stringifyCaseMappings(uppercaseMappings, "codepoint")}}\n`)
+    stream.write(`int32_t sfce_codepoint_to_upper(int32_t codepoint)\n{\n${stringifyCaseMappings(uppercaseMappings, "codepoint", false)}}\n`)
     stream.write(`\n`)
-    stream.write(`int32_t sfce_codepoint_to_lower(int32_t codepoint)\n{\n${stringifyCaseMappings(lowercaseMappings, "codepoint")}}\n`)
+    stream.write(`int32_t sfce_codepoint_to_lower(int32_t codepoint)\n{\n${stringifyCaseMappings(lowercaseMappings, "codepoint", false)}}\n`)
     stream.write(`\n`)
     stream.write(`uint8_t sfce_codepoint_width(int32_t codepoint)\n{\n${stringifyCaseMappings(widthMappings, "1", true)}}\n`)
     // stream.write(`int32_t sfce_codepoint_to_lower(int32_t codepoint)\n`)

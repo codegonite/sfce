@@ -6,7 +6,8 @@ const fs = require("node:fs")
 const path = require("node:path")
 const https = require("node:https")
 
-const PAGE_SIZE = 128
+// const PAGE_SIZE = 128
+const PAGE_SIZE = 256
 
 const unicodeLineRegex = /([0-9A-F]+);([^;]+);([A-Z]+);([0-9]+);([A-Z]+);(<([A-Z]*)>)?((\ ?[0-9A-F]+)*);([0-9]*);([0-9]*);([^;]*);([YN]*);([^;]*);([^;]*);([0-9A-F]*);([0-9A-F]*);([0-9A-F]*)$/i
 const lineHexRangeRegex = /^([0-9A-F]+)(\.\.([0-9A-F]+))?\s*;\s*([^#]*)\s*([^\r\n]*)/i
@@ -414,7 +415,7 @@ function createProgramUnicodeDescriptors(unicodeData, eastAsianWidths) {
 }
 
 async function main() {
-    const filepath = process.argv[2] || "sfce_utf8_properties.c"
+    const filepath = process.argv[2] || "ignore/sfce_utf8_properties.c"
 
     console.log("Loading files from url: 'https://www.unicode.org/Public/16.0.0/'!")
     const UNICODE_DATA = await getContentsFromURL("https://www.unicode.org/Public/16.0.0/ucd/UnicodeData.txt")
@@ -450,19 +451,23 @@ async function main() {
         const combiningClass = data?.canonicalCombiningClass ?? 0
         const bidiClass = (data?.bidiClass ?? "NONE").toUpperCase()
         const decomposition = (data?.decompositionType ?? "NONE").toUpperCase()
-        // const uppercaseMapping = data?.simpleUppercaseMapping ?? -1
-        // const lowercaseMapping = data?.simpleLowercaseMapping ?? -1
-        // const titleCaseMapping = data?.simpleTitleCaseMapping ?? -1
+        const uppercaseMapping = data?.simpleUppercaseMapping ?? -1
+        const lowercaseMapping = data?.simpleLowercaseMapping ?? -1
+        const titleCaseMapping = data?.simpleTitleCaseMapping ?? -1
         const bidiMirrored = data?.bidiMirrored ? 1 : 0
 
-        propertyStrings.push(`{ SFCE_UNICODE_CATEGORY_${category}, ${combiningClass}, SFCE_UNICODE_BIDI_CLASS_${bidiClass}, SFCE_UNICODE_DECOMPOSITION_${decomposition}, ${width}, ${bidiMirrored} }`)
+        // propertyStrings.push(`{ SFCE_UNICODE_CATEGORY_${category}, ${combiningClass}, SFCE_UNICODE_BIDI_CLASS_${bidiClass}, SFCE_UNICODE_DECOMPOSITION_${decomposition}, ${uppercaseMapping}, ${lowercaseMapping}, ${titleCaseMapping}, ${width}, ${bidiMirrored} }`)
+        propertyStrings.push(`{ SFCE_UNICODE_CATEGORY_${category}, SFCE_UNICODE_BIDI_CLASS_${bidiClass}, SFCE_UNICODE_DECOMPOSITION_${decomposition}, ${bidiMirrored}, ${width}, ${combiningClass}, ${uppercaseMapping}, ${lowercaseMapping}, ${titleCaseMapping} }`)
     }
 
     console.log(`Compressing ${propertyStrings.length} unicode properties!`)
 
     const [compressedData, pages, pageIndices] = createPagedData(propertyStrings, PAGE_SIZE)
-    const pageOffsets = pageIndices.map(e => PAGE_SIZE * e)
+    // const pageOffsets = pageIndices.map(e => PAGE_SIZE * e)
+    const pageOffsets = pageIndices
     const indices = pages.flat()
+
+    console.log(`Created ${pages.length} pages of unicode data!`)
 
     console.log(`Writing ${compressedData.length} unicode properties to "${filepath}"!`)
 
@@ -474,11 +479,9 @@ async function main() {
 // 
 `)
     stream.write(`static const struct sfce_utf8_property utf8_properties[${compressedData.length}] = ${formatDataAsCArray(compressedData)};\n`)
-    stream.write(`int32_t utf8_property_indices[${indices.length}] = ${formatDataAsCArray(indices)};\n`)
-    stream.write(`int32_t utf8_property_page_offsets[${pageOffsets.length}] = ${formatDataAsCArray(pageOffsets)};\n`)
+    stream.write(`int16_t utf8_property_indices[${indices.length}] = ${formatDataAsCArray(indices)};\n`)
+    stream.write(`int16_t utf8_property_page_offsets[${pageOffsets.length}] = ${formatDataAsCArray(pageOffsets)};\n`)
     stream.close()
-
-    console.log(eastAsianWidths)
 }
 
 main()

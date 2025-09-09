@@ -30,7 +30,7 @@ make
 **Or using the GCC compiler**
 
 ```bash
-gcc sfce.c -O3 -Werror -Wfatal-errors -Wall -o sfce
+gcc sfce.c -Os -Werror -Wfatal-errors -Wall -o sfce
 ```
 
 ## Usage
